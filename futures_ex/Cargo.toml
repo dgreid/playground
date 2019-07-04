@@ -1,0 +1,9 @@
+[package]
+name = "problems"
+version = "0.1.0"
+authors = ["Dylan Reid <dgreid@chromium.org>"]
+edition = "2018"
+
+[dependencies]
+libc = "*"
+sys_util = { path = "/home/dgreid/chromiumos/src/platform/crosvm/sys_util" }
