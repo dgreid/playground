@@ -3,10 +3,11 @@
 /// ```
 /// extern crate program_config;
 /// use program_config::create_config;
-/// create_config!((u32, foo, 2));
+/// create_config!((foo, u32, 2),(bar, bool, Default::default()));
 /// fn main() {
 ///     let c = Config::default();
 ///     assert_eq!(c.foo, 2u32);
+///     assert_eq!(c.bar, false);
 /// }
 /// ```
 ///
@@ -17,11 +18,12 @@ use proc_macro2::{self, Punct, Spacing};
 use quote::quote;
 use quote::{ToTokens, TokenStreamExt};
 use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
 use syn::{parenthesized, parse_macro_input, token, Expr, Ident, Result, Token, Type};
 
 // The entire configuration space.
 struct ConfigStruct {
-    items: Vec<ConfigItem>,
+    items: Punctuated<ConfigItem, Token![,]>,
 }
 
 impl ConfigStruct {
@@ -89,11 +91,13 @@ impl<'a> ToTokens for ItemDefault<'a> {
 
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
-        let var_type = input.parse()?;
-        let _: Token![,] = input.parse()?;
-        let name = input.parse()?;
-        let _: Token![,] = input.parse()?;
-        let default_val = input.parse()?;
+        let content;
+        let _ptoken: token::Paren = parenthesized!(content in input);
+        let name = content.parse()?;
+        let _: Token![,] = content.parse()?;
+        let var_type = content.parse()?;
+        let _: Token![,] = content.parse()?;
+        let default_val = content.parse()?;
         Ok(ConfigItem {
             var_type,
             name,
@@ -104,20 +108,15 @@ impl Parse for ConfigItem {
 
 impl Parse for ConfigStruct {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut items = Vec::new();
-        // TODO handle list of items
-        let paren_content;
-        let _ptoken: token::Paren = parenthesized!(paren_content in input);
-        let item: ConfigItem = paren_content.parse()?;
-        items.push(item);
-        Ok(ConfigStruct { items })
+        Ok(ConfigStruct {
+            items: Punctuated::parse_terminated(input)?,
+        })
     }
 }
 
 #[proc_macro]
 pub fn create_config(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ConfigStruct);
-    // TODO - loop over all items.
     let members = input.members();
     let defaults = input.defaults();
     let struct_code = quote! {
