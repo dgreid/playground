@@ -8,12 +8,19 @@
 /// (bar, bool, Default::default(), { if value.len() > 3 { true } else { false } } ),
 /// );
 /// fn main() {
+///
+///    let mut args = std::env::args();
+///     if args.next().is_none() {
+///         println!("expected executable name");
+///         return;
+///     }
+///                             
 ///     let c = Config::default();
 ///     assert_eq!(c.foo, 2u32);
 ///     assert_eq!(c.bar, false);
-///     let c = Config::from_args();
-///     assert_eq!(c.foo, 5555u32);
-///     assert_eq!(c.bar, true);
+///     let c = Config::from_args(args);
+///     assert_eq!(c.foo, 2u32);
+///     assert_eq!(c.bar, false);
 /// }
 /// ```
 ///
@@ -138,6 +145,8 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let members = input.members();
     let defaults = input.defaults();
     let names = input.names();
+    let option_names = input.names().map(|n| n.to_string());
+    let option_names2 = input.names().map(|n| n.to_string());
     let setters = input.setter_codes();
 
     let expanded = quote! {
@@ -155,11 +164,59 @@ pub fn create_config(input: TokenStream) -> TokenStream {
 
         impl Config {
             // TODO - actually parse the args.
-            pub fn from_args() -> Config {
+            pub fn from_args<T>(args: T) -> Config
+            where
+                T: IntoIterator,
+                T::Item: AsRef<std::ffi::OsStr>
+            {
                 let mut cfg = Self::default();
-                #(let value = "5555"; cfg.#names = #setters;)*
+
+                let parser = build_options_parser();
+                let matches = match parser.parse(args) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        // todo - handle error.
+                        return cfg;
+                    }
+                };
+                if matches.opt_present("h") {
+                    let brief = format!("Usage: {} [options]", args[0]);
+                    print!("{}", parser.usage(&brief));
+                    std::process::exit(0);
+                }
+
+                // Set each option if it is specified.
+                #(
+                    let opt_name = #option_names;
+                    if matches.opt_present(opt_name) {
+                        let values = matches.opt_strs(opt_name);
+                        if values.len == 1 { // TODO - handle multiple instances
+                            let value = values[0];
+                            cfg.#names = #setters;
+                        }
+                    }
+                )*
+
                 cfg
             }
+        }
+
+        fn build_options_parser() -> getopts::Options {
+            let mut options_parser = getopts::Options::new();
+            options_parser.optflag("h", "help", "Print this help menu");
+
+            #(
+                options_parser.opt(
+                    "",// #short_names
+                    #option_names2,
+                    "", //option.help,
+                    "", //option.hint,
+                    getopts::HasArg::Yes, // option.has_arg,
+                    getopts::Occur::Optional, //option.occur,
+                    );
+            )*
+
+            options_parser
         }
     };
 
