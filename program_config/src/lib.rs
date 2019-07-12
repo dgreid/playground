@@ -3,11 +3,17 @@
 /// ```
 /// extern crate program_config;
 /// use program_config::create_config;
-/// create_config!((foo, u32, 2),(bar, bool, Default::default()));
+/// create_config!(
+/// (foo, u32, 2, { value.parse().unwrap() } ),
+/// (bar, bool, Default::default(), { if value.len() > 3 { true } else { false } } ),
+/// );
 /// fn main() {
 ///     let c = Config::default();
 ///     assert_eq!(c.foo, 2u32);
 ///     assert_eq!(c.bar, false);
+///     let c = Config::from_args();
+///     assert_eq!(c.foo, 5555u32);
+///     assert_eq!(c.bar, true);
 /// }
 /// ```
 ///
@@ -34,6 +40,14 @@ impl ConfigStruct {
     pub fn defaults(&self) -> impl Iterator<Item = ItemDefault> {
         self.items.iter().map(|item| item.default())
     }
+
+    pub fn names(&self) -> impl Iterator<Item = &Ident> {
+        self.items.iter().map(|item| &item.name)
+    }
+
+    pub fn setter_codes(&self) -> impl Iterator<Item = &Expr> {
+        self.items.iter().map(|item| &item.setter)
+    }
 }
 
 // All the information about a particular configuration item.
@@ -41,6 +55,7 @@ struct ConfigItem {
     var_type: Box<Type>,
     name: Ident,
     default_val: Expr,
+    setter: Expr, // sets the config value based on the passed argument.
 }
 
 impl ConfigItem {
@@ -98,10 +113,13 @@ impl Parse for ConfigItem {
         let var_type = content.parse()?;
         let _: Token![,] = content.parse()?;
         let default_val = content.parse()?;
+        let _: Token![,] = content.parse()?;
+        let setter = content.parse()?;
         Ok(ConfigItem {
             var_type,
             name,
             default_val,
+            setter,
         })
     }
 }
@@ -119,7 +137,10 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ConfigStruct);
     let members = input.members();
     let defaults = input.defaults();
-    let struct_code = quote! {
+    let names = input.names();
+    let setters = input.setter_codes();
+
+    let expanded = quote! {
         struct Config {
             #(#members),*
         }
@@ -132,6 +153,15 @@ pub fn create_config(input: TokenStream) -> TokenStream {
             }
         }
 
+        impl Config {
+            // TODO - actually parse the args.
+            pub fn from_args() -> Config {
+                let mut cfg = Self::default();
+                #(let value = "5555"; cfg.#names = #setters;)*
+                cfg
+            }
+        }
     };
-    struct_code.into()
+
+    expanded.into()
 }
