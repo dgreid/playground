@@ -1,14 +1,13 @@
 ///
-///
 /// ```
 /// extern crate program_config;
 /// use program_config::create_config;
 /// create_config!(
-/// (foo, u32, 2, { value.parse().unwrap() } ),
-/// (bar, bool, Default::default(), { if value.len() > 3 { true } else { false } } ),
+/// (foo, u32, 2, |value: &str| { value.parse().unwrap() } ),
+/// (bar, bool, Default::default(), |value: &str| { if value.len() > 3 { true } else { false } } ),
 /// );
-/// fn main() {
 ///
+/// fn main() {
 ///    let mut args = std::env::args();
 ///     if args.next().is_none() {
 ///         println!("expected executable name");
@@ -54,6 +53,10 @@ impl ConfigStruct {
 
     pub fn setter_codes(&self) -> impl Iterator<Item = &Expr> {
         self.items.iter().map(|item| &item.setter)
+    }
+
+    pub fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
+        self.items.iter().map(|item| &item.var_type)
     }
 }
 
@@ -149,15 +152,31 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let option_names2 = input.names().map(|n| n.to_string());
     let setters = input.setter_codes();
 
+    let setter_names = input.names().map(|n| {
+        let concatenated = format!("set_{}", n);
+        syn::Ident::new(&concatenated, n.span())
+    });
+    let setter_names2 = input.names().map(|n| {
+        let concatenated = format!("set_{}", n);
+        syn::Ident::new(&concatenated, n.span())
+    });
+    let setter_names3 = input.names().map(|n| {
+        let concatenated = format!("set_{}", n);
+        syn::Ident::new(&concatenated, n.span())
+    });
+    let types = input.var_types();
+
     let expanded = quote! {
         struct Config {
-            #(#members),*
+            #(#members),*,
+            #(#setter_names: Box<dyn Fn(&str) -> #types>),*
         }
 
         impl Default for Config {
             fn default() -> Self {
                 Config {
-                   #(#defaults),*
+                    #(#defaults),*,
+                    #(#setter_names2: Box::new(#setters)),*
                 }
             }
         }
@@ -180,7 +199,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                     }
                 };
                 if matches.opt_present("h") {
-                    let brief = format!("Usage: {} [options]", args[0]);
+                    let brief = format!("Usage: TODO [options]");
                     print!("{}", parser.usage(&brief));
                     std::process::exit(0);
                 }
@@ -190,9 +209,10 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                     let opt_name = #option_names;
                     if matches.opt_present(opt_name) {
                         let values = matches.opt_strs(opt_name);
-                        if values.len == 1 { // TODO - handle multiple instances
-                            let value = values[0];
-                            cfg.#names = #setters;
+                        if values.len() == 1 { // TODO - handle multiple instances
+                            for value in values {
+                                cfg.#names = (cfg.#setter_names3)(&value);
+                            }
                         }
                     }
                 )*
