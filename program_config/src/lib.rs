@@ -89,32 +89,66 @@ impl<'a> ToTokens for ItemDefault<'a> {
     }
 }
 
+enum ItemOption {
+    Name(Ident),
+    LongOpt(String),
+    ShortOpt(String),
+    Def(Expr),
+    VarType(Box<Type>),
+    Setter(Expr),
+}
+
+impl Parse for ItemOption {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let tag: Ident = input.parse()?;
+        let _: Token![:] = content.parse()?;
+        match &tag.to_string() {
+            "NAME" => {
+                let name = input.parse()?;
+                Ok(ItemOption::Name(name))
+            }
+            "DEFAULT" => {
+                let def = input.parse()?;
+                Ok(ItemOption::Def(def))
+            }
+            "SET" => {
+                let setter = input.parse()?;
+                Ok(ItemOption::Setter(setter))
+            }
+            "TYPE" => {
+                let var_type: Box<Type> = input.parse()?;
+                Ok(ItemOption::VarType(var_type))
+            }
+            _ => Err(()),
+        }
+    }
+}
+
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         let _ptoken: token::Paren = parenthesized!(content in input);
 
-        let mut tags = HashSet::new();
+        let opts: Vec<ConfigOption> = Puncuated::parse_terminated(input)?;
 
-        let tag: Ident = content.parse()?;
-        if &tag.to_string() == "NAME" {
-            println!("name");
-            let _: Token![:] = content.parse()?;
-        } else {
-            println!("not: {}", &tag.to_string());
+        let mut name = None;
+        let mut default_val = None;
+        let mut setter = None;
+        let mut var_type = None;
+        for opt in opts {
+            match opt {
+                ItemOption::Name(name) => name = Some(name),
+                ItemOption::Def(default_val) => default_val = Some(default_val),
+                ItemOption::Setter(setter) => setter = Some(setter),
+                ItemOption::VarType(var_type) => var_type = Some(var_type),
+            }
         }
-        let name = content.parse()?;
-        let _: Token![,] = content.parse()?;
-        let var_type = content.parse()?;
-        let _: Token![,] = content.parse()?;
-        let default_val = content.parse()?;
-        let _: Token![,] = content.parse()?;
-        let setter = content.parse()?;
+
         Ok(ConfigItem {
-            var_type,
-            name,
-            default_val,
-            setter,
+            name: name.unwrap(),
+            default_val: default_val.unwrap(),
+            setter: setter.unwrap(),
+            var_type: var_type.unwrap(),
         })
     }
 }
