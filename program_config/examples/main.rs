@@ -1,8 +1,10 @@
 extern crate program_config;
 use program_config::create_config;
 create_config!(
-    (foo, u32, 2, |value: &str| { value.parse().unwrap() }),
-    (bar, bool, Default::default(), |value: &str| {
+    (NAME: foo, TYPE: u32, DEFAULT: 2, |value: &str| {
+        value.parse().unwrap()
+    }),
+    (NAME: bar, TYPE: bool, DEFAULT: Default::default(), |value: &str| {
         if value.len() > 3 {
             true
         } else {

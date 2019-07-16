@@ -1,28 +1,3 @@
-///
-/// ```
-/// extern crate program_config;
-/// use program_config::create_config;
-/// create_config!(
-/// (foo, u32, 2, |value: &str| { value.parse().unwrap() } ),
-/// (bar, bool, Default::default(), |value: &str| { if value.len() > 3 { true } else { false } } ),
-/// );
-///
-/// fn main() {
-///    let mut args = std::env::args();
-///     if args.next().is_none() {
-///         println!("expected executable name");
-///         return;
-///     }
-///                             
-///     let c = Config::default();
-///     assert_eq!(c.foo, 2u32);
-///     assert_eq!(c.bar, false);
-///     let c = Config::from_args(args);
-///     assert_eq!(c.foo, 2u32);
-///     assert_eq!(c.bar, false);
-/// }
-/// ```
-///
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
@@ -118,6 +93,16 @@ impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         let _ptoken: token::Paren = parenthesized!(content in input);
+
+        let mut tags = HashSet::new();
+
+        let tag: Ident = content.parse()?;
+        if &tag.to_string() == "NAME" {
+            println!("name");
+            let _: Token![:] = content.parse()?;
+        } else {
+            println!("not: {}", &tag.to_string());
+        }
         let name = content.parse()?;
         let _: Token![,] = content.parse()?;
         let var_type = content.parse()?;
