@@ -35,6 +35,14 @@ impl ConfigStruct {
     }
 }
 
+impl Parse for ConfigStruct {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(ConfigStruct {
+            items: Punctuated::parse_terminated(input)?,
+        })
+    }
+}
+
 // All the information about a particular configuration item.
 struct ConfigItem {
     var_type: Box<Type>,
@@ -91,8 +99,8 @@ impl<'a> ToTokens for ItemDefault<'a> {
 
 enum ItemOption {
     Name(Ident),
-    LongOpt(String),
-    ShortOpt(String),
+    //LongOpt(String),
+    //ShortOpt(String),
     Def(Expr),
     VarType(Box<Type>),
     Setter(Expr),
@@ -101,8 +109,8 @@ enum ItemOption {
 impl Parse for ItemOption {
     fn parse(input: ParseStream) -> Result<Self> {
         let tag: Ident = input.parse()?;
-        let _: Token![:] = content.parse()?;
-        match &tag.to_string() {
+        let _: Token![:] = input.parse()?;
+        match tag.to_string().as_ref() {
             "NAME" => {
                 let name = input.parse()?;
                 Ok(ItemOption::Name(name))
@@ -119,7 +127,7 @@ impl Parse for ItemOption {
                 let var_type: Box<Type> = input.parse()?;
                 Ok(ItemOption::VarType(var_type))
             }
-            _ => Err(()),
+            _ => panic!("foo"), //Err(()),
         }
     }
 }
@@ -127,9 +135,9 @@ impl Parse for ItemOption {
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
-        let _ptoken: token::Paren = parenthesized!(content in input);
-
-        let opts: Vec<ConfigOption> = Puncuated::parse_terminated(input)?;
+        let _paren_token: token::Paren = parenthesized!(content in input);
+        let opts: Punctuated<ItemOption, Token![,]> =
+            content.parse_terminated(ItemOption::parse)?;
 
         let mut name = None;
         let mut default_val = None;
@@ -137,10 +145,10 @@ impl Parse for ConfigItem {
         let mut var_type = None;
         for opt in opts {
             match opt {
-                ItemOption::Name(name) => name = Some(name),
-                ItemOption::Def(default_val) => default_val = Some(default_val),
-                ItemOption::Setter(setter) => setter = Some(setter),
-                ItemOption::VarType(var_type) => var_type = Some(var_type),
+                ItemOption::Name(n) => name = Some(n),
+                ItemOption::Def(d) => default_val = Some(d),
+                ItemOption::Setter(s) => setter = Some(s),
+                ItemOption::VarType(v) => var_type = Some(v),
             }
         }
 
@@ -149,14 +157,6 @@ impl Parse for ConfigItem {
             default_val: default_val.unwrap(),
             setter: setter.unwrap(),
             var_type: var_type.unwrap(),
-        })
-    }
-}
-
-impl Parse for ConfigStruct {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(ConfigStruct {
-            items: Punctuated::parse_terminated(input)?,
         })
     }
 }
