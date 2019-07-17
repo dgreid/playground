@@ -4,13 +4,13 @@ create_config!(
     (NAME: foo,
      TYPE: u32,
      DEFAULT: 2,
-     SET: |value: &str| {
+     PARSE: |value: &str| {
         value.parse().unwrap()
     }),
     (NAME: bar,
      TYPE: bool,
      DEFAULT: Default::default(),
-     SET: |value: &str| {
+     PARSE: |value: &str| {
         if value.len() > 3 {
             true
         } else {

@@ -26,8 +26,8 @@ impl ConfigStruct {
         self.items.iter().map(|item| &item.name)
     }
 
-    pub fn setter_codes(&self) -> impl Iterator<Item = &Expr> {
-        self.items.iter().map(|item| &item.setter)
+    pub fn arg_parsers(&self) -> impl Iterator<Item = &Expr> {
+        self.items.iter().map(|item| &item.arg_parser)
     }
 
     pub fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
@@ -48,7 +48,7 @@ struct ConfigItem {
     var_type: Box<Type>,
     name: Ident,
     default_val: Expr,
-    setter: Expr, // sets the config value based on the passed argument.
+    arg_parser: Expr, // Parses the config value based on the passed argument.
 }
 
 impl ConfigItem {
@@ -103,7 +103,7 @@ enum ItemOption {
     //ShortOpt(String),
     Def(Expr),
     VarType(Box<Type>),
-    Setter(Expr),
+    Parser(Expr),
 }
 
 impl Parse for ItemOption {
@@ -119,9 +119,9 @@ impl Parse for ItemOption {
                 let def = input.parse()?;
                 Ok(ItemOption::Def(def))
             }
-            "SET" => {
-                let setter = input.parse()?;
-                Ok(ItemOption::Setter(setter))
+            "PARSE" => {
+                let parser = input.parse()?;
+                Ok(ItemOption::Parser(parser))
             }
             "TYPE" => {
                 let var_type: Box<Type> = input.parse()?;
@@ -141,13 +141,13 @@ impl Parse for ConfigItem {
 
         let mut name = None;
         let mut default_val = None;
-        let mut setter = None;
+        let mut parser = None;
         let mut var_type = None;
         for opt in opts {
             match opt {
                 ItemOption::Name(n) => name = Some(n),
                 ItemOption::Def(d) => default_val = Some(d),
-                ItemOption::Setter(s) => setter = Some(s),
+                ItemOption::Parser(p) => parser = Some(p),
                 ItemOption::VarType(v) => var_type = Some(v),
             }
         }
@@ -155,7 +155,7 @@ impl Parse for ConfigItem {
         Ok(ConfigItem {
             name: name.unwrap(),
             default_val: default_val.unwrap(),
-            setter: setter.unwrap(),
+            arg_parser: parser.unwrap(),
             var_type: var_type.unwrap(),
         })
     }
@@ -169,18 +169,18 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let names = input.names();
     let option_names = input.names().map(|n| n.to_string());
     let option_names2 = input.names().map(|n| n.to_string());
-    let setters = input.setter_codes();
+    let parsers = input.arg_parsers();
 
-    let setter_names = input.names().map(|n| {
-        let concatenated = format!("set_{}", n);
+    let parser_names = input.names().map(|n| {
+        let concatenated = format!("parse_{}", n);
         syn::Ident::new(&concatenated, n.span())
     });
-    let setter_names2 = input.names().map(|n| {
-        let concatenated = format!("set_{}", n);
+    let parser_names2 = input.names().map(|n| {
+        let concatenated = format!("parse_{}", n);
         syn::Ident::new(&concatenated, n.span())
     });
-    let setter_names3 = input.names().map(|n| {
-        let concatenated = format!("set_{}", n);
+    let parser_names3 = input.names().map(|n| {
+        let concatenated = format!("parse_{}", n);
         syn::Ident::new(&concatenated, n.span())
     });
     let types = input.var_types();
@@ -188,14 +188,14 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         struct Config {
             #(#members),*,
-            #(#setter_names: Box<dyn Fn(&str) -> #types>),*
+            #(#parser_names: Box<dyn Fn(&str) -> #types>),*
         }
 
         impl Default for Config {
             fn default() -> Self {
                 Config {
                     #(#defaults),*,
-                    #(#setter_names2: Box::new(#setters)),*
+                    #(#parser_names2: Box::new(#parsers)),*
                 }
             }
         }
@@ -230,7 +230,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                         let values = matches.opt_strs(opt_name);
                         if values.len() == 1 { // TODO - handle multiple instances
                             for value in values {
-                                cfg.#names = (cfg.#setter_names3)(&value);
+                                cfg.#names = (cfg.#parser_names3)(&value);
                             }
                         }
                     }
