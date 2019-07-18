@@ -188,7 +188,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         struct Config {
             #(#members),*,
-            #(#parser_names: Box<dyn Fn(&str) -> #types>),*
+            #(#parser_names: Box<dyn Fn(&str, &Config) -> #types>),*
         }
 
         impl Default for Config {
@@ -209,8 +209,8 @@ pub fn create_config(input: TokenStream) -> TokenStream {
             {
                 let mut cfg = Self::default();
 
-                let parser = build_options_parser();
-                let matches = match parser.parse(args) {
+                let opt_parser = build_options_parser();
+                let matches = match opt_parser.parse(args) {
                     Ok(m) => m,
                     Err(e) => {
                         // todo - handle error.
@@ -219,7 +219,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                 };
                 if matches.opt_present("h") {
                     let brief = format!("Usage: TODO [options]");
-                    print!("{}", parser.usage(&brief));
+                    print!("{}", opt_parser.usage(&brief));
                     std::process::exit(0);
                 }
 
@@ -230,7 +230,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                         let values = matches.opt_strs(opt_name);
                         if values.len() == 1 { // TODO - handle multiple instances
                             for value in values {
-                                cfg.#names = (cfg.#parser_names3)(&value);
+                                cfg.#names = (cfg.#parser_names3)(&value, &cfg);
                             }
                         }
                     }

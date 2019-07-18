@@ -1,21 +1,26 @@
 extern crate program_config;
 use program_config::create_config;
 create_config!(
-    (NAME: foo,
+    (NAME: test_val,
      TYPE: u32,
      DEFAULT: 2,
-     PARSE: |value: &str| {
-        value.parse().unwrap()
+     PARSE: |value, cfg| {
+         let val = value.parse().unwrap();
+         if cfg.limit {
+             std::cmp::min(val, 100)
+         } else {
+             val
+         }
     }),
-    (NAME: bar,
+    (NAME: limit,
      TYPE: bool,
      DEFAULT: Default::default(),
-     PARSE: |value: &str| {
-        if value.len() > 3 {
-            true
-        } else {
-            false
-        }
+     PARSE: |value, _cfg| {
+         if value.to_lowercase() == "true" {
+             true
+         } else {
+             false
+         }
     }),
 );
 
@@ -27,9 +32,9 @@ fn main() {
     }
 
     let c = Config::default();
-    assert_eq!(c.foo, 2u32);
-    assert_eq!(c.bar, false);
+    assert_eq!(c.test_val, 2u32);
+    assert_eq!(c.limit, false);
     let c = Config::from_args(args);
-    assert_eq!(c.foo, 2u32);
-    assert_eq!(c.bar, false);
+    assert_eq!(c.test_val, 2u32);
+    assert_eq!(c.limit, false);
 }
