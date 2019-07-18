@@ -26,8 +26,15 @@ impl ConfigStruct {
         self.items.iter().map(|item| &item.name)
     }
 
-    pub fn arg_parsers(&self) -> impl Iterator<Item = &Expr> {
-        self.items.iter().map(|item| &item.arg_parser)
+    pub fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
+        self.names().map(|n| {
+            let concatenated = format!("parse_{}", n);
+            syn::Ident::new(&concatenated, n.span())
+        })
+    }
+
+    pub fn parser_closures(&self) -> impl Iterator<Item = &Expr> {
+        self.items.iter().map(|item| &item.parser_closure)
     }
 
     pub fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
@@ -48,7 +55,7 @@ struct ConfigItem {
     var_type: Box<Type>,
     name: Ident,
     default_val: Expr,
-    arg_parser: Expr, // Parses the config value based on the passed argument.
+    parser_closure: Expr, // Parses the config value based on the passed argument.
 }
 
 impl ConfigItem {
@@ -155,7 +162,7 @@ impl Parse for ConfigItem {
         Ok(ConfigItem {
             name: name.unwrap(),
             default_val: default_val.unwrap(),
-            arg_parser: parser.unwrap(),
+            parser_closure: parser.unwrap(),
             var_type: var_type.unwrap(),
         })
     }
@@ -164,38 +171,29 @@ impl Parse for ConfigItem {
 #[proc_macro]
 pub fn create_config(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ConfigStruct);
+
     let members = input.members();
     let defaults = input.defaults();
     let names = input.names();
     let option_names = input.names().map(|n| n.to_string());
     let option_names2 = input.names().map(|n| n.to_string());
-    let parsers = input.arg_parsers();
-
-    let parser_names = input.names().map(|n| {
-        let concatenated = format!("parse_{}", n);
-        syn::Ident::new(&concatenated, n.span())
-    });
-    let parser_names2 = input.names().map(|n| {
-        let concatenated = format!("parse_{}", n);
-        syn::Ident::new(&concatenated, n.span())
-    });
-    let parser_names3 = input.names().map(|n| {
-        let concatenated = format!("parse_{}", n);
-        syn::Ident::new(&concatenated, n.span())
-    });
+    let parser_closures = input.parser_closures();
+    let parser_names_definition = input.parser_names();
+    let parser_names_creation = input.parser_names();
+    let parser_names_call = input.parser_names();
     let types = input.var_types();
 
     let expanded = quote! {
         struct Config {
             #(#members),*,
-            #(#parser_names: Box<dyn Fn(&str, &Config) -> #types>),*
+            #(#parser_names_definition: Box<dyn Fn(&str, &Config) -> #types>),*
         }
 
         impl Default for Config {
             fn default() -> Self {
                 Config {
                     #(#defaults),*,
-                    #(#parser_names2: Box::new(#parsers)),*
+                    #(#parser_names_creation: Box::new(#parser_closures)),*
                 }
             }
         }
@@ -230,7 +228,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
                         let values = matches.opt_strs(opt_name);
                         if values.len() == 1 { // TODO - handle multiple instances
                             for value in values {
-                                cfg.#names = (cfg.#parser_names3)(&value, &cfg);
+                                cfg.#names = (cfg.#parser_names_call)(&value, &cfg);
                             }
                         }
                     }
@@ -247,7 +245,7 @@ pub fn create_config(input: TokenStream) -> TokenStream {
             #(
                 options_parser.opt(
                     "",// #short_names
-                    #option_names2,
+                    #option_names2, // long argument
                     "", //option.help,
                     "", //option.hint,
                     getopts::HasArg::Yes, // option.has_arg,
