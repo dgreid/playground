@@ -1,12 +1,12 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use proc_macro2;
+use proc_macro2::{self, Span};
 use quote::quote;
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parenthesized, parse_macro_input, token, Expr, Ident, Result, Token, Type};
+use syn::{parenthesized, parse_macro_input, token, Expr, Ident, LitStr, Result, Token, Type};
 
 // The entire configuration space.
 struct ConfigStruct {
@@ -36,6 +36,12 @@ impl ConfigStruct {
     pub fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
         self.items.iter().map(|item| &item.var_type)
     }
+
+    pub fn long_options(&self) -> impl Iterator<Item = &LitStr> {
+        self.items
+            .iter()
+            .map(|item| item.long_opt.unwrap_or(LitStr::new("", Span::def_site())))
+    }
 }
 
 impl Parse for ConfigStruct {
@@ -52,8 +58,8 @@ impl ToTokens for ConfigStruct {
         let names = self.names();
         let names_definition = self.names();
         let names_default = self.names();
-        let option_names = self.names().map(|n| n.to_string());
-        let option_names2 = self.names().map(|n| n.to_string());
+        let long_options = self.long_options();
+        let long_options2 = self.long_options();
         let parser_closures = self.parser_closures();
         let parser_names_definition = self.parser_names();
         let parser_names_creation = self.parser_names();
@@ -100,7 +106,7 @@ impl ToTokens for ConfigStruct {
 
                     // Set each option if it is specified.
                     #(
-                        let opt_name = #option_names;
+                        let opt_name = #long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
                             cfg.#names = (cfg.#parser_names_call)(values, &cfg);
@@ -118,7 +124,7 @@ impl ToTokens for ConfigStruct {
                 #(
                     options_parser.opt(
                         "",// #short_names
-                        #option_names2, // long argument
+                        #long_options2, // long argument
                         "", //option.help,
                         "", //option.hint,
                         getopts::HasArg::Yes, // option.has_arg,
@@ -140,6 +146,7 @@ struct ConfigItem {
     name: Ident,
     default_val: Expr,
     parser_closure: Expr, // Parses the config value based on the passed argument.
+    long_opt: Option<LitStr>,
 }
 
 impl Parse for ConfigItem {
@@ -153,12 +160,14 @@ impl Parse for ConfigItem {
         let mut default_val = None;
         let mut parser = None;
         let mut var_type = None;
+        let mut long_opt = None;
         for opt in opts {
             match opt {
                 ItemOption::Name(n) => name = Some(n),
                 ItemOption::Def(d) => default_val = Some(d),
                 ItemOption::Parser(p) => parser = Some(p),
                 ItemOption::VarType(v) => var_type = Some(v),
+                ItemOption::LongOpt(o) => long_opt = Some(o),
             }
         }
 
@@ -167,13 +176,14 @@ impl Parse for ConfigItem {
             default_val: default_val.unwrap(),
             parser_closure: parser.unwrap(),
             var_type: var_type.unwrap(),
+            long_opt,
         })
     }
 }
 
 enum ItemOption {
     Name(Ident),
-    //LongOpt(String),
+    LongOpt(LitStr),
     //ShortOpt(String),
     Def(Expr),
     VarType(Box<Type>),
@@ -200,6 +210,10 @@ impl Parse for ItemOption {
             "TYPE" => {
                 let var_type: Box<Type> = input.parse()?;
                 Ok(ItemOption::VarType(var_type))
+            }
+            "LONG_OPT" => {
+                let opt_name: LitStr = input.parse()?;
+                Ok(ItemOption::LongOpt(opt_name))
             }
             _ => panic!("foo"), //Err(()),
         }

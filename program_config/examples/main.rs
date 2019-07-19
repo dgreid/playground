@@ -2,6 +2,7 @@ extern crate program_config;
 use program_config::create_config;
 create_config!(
     (NAME: test_val,
+     LONG_OPT: "value",
      TYPE: u32,
      DEFAULT: 2,
      PARSE: |values, cfg| {
@@ -14,6 +15,7 @@ create_config!(
          }
     }),
     (NAME: limit,
+     LONG_OPT: "limit",
      TYPE: bool,
      DEFAULT: Default::default(),
      PARSE: |values, _cfg| {
@@ -37,6 +39,9 @@ fn main() {
     assert_eq!(c.test_val, 2u32);
     assert_eq!(c.limit, false);
     let c = Config::from_args(args);
-    assert_eq!(c.test_val, 2u32);
-    assert_eq!(c.limit, false);
+    println!(
+        "value: {} {}limited",
+        c.test_val,
+        if c.limit { "" } else { "un" }
+    );
 }
