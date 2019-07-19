@@ -13,34 +13,41 @@ struct ConfigStruct {
     items: Punctuated<ConfigItem, Token![,]>,
 }
 
+
 impl ConfigStruct {
-    pub fn defaults(&self) -> impl Iterator<Item = &Expr> {
+    fn defaults(&self) -> impl Iterator<Item = &Expr> {
         self.items.iter().map(|item| &item.default_val)
     }
 
-    pub fn names(&self) -> impl Iterator<Item = &Ident> {
+    fn names(&self) -> impl Iterator<Item = &Ident> {
         self.items.iter().map(|item| &item.name)
     }
 
-    pub fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
+    fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
         self.names().map(|n| {
             let concatenated = format!("parse_{}", n);
             syn::Ident::new(&concatenated, n.span())
         })
     }
 
-    pub fn parser_closures(&self) -> impl Iterator<Item = &Expr> {
+    fn parser_closures(&self) -> impl Iterator<Item = &Expr> {
         self.items.iter().map(|item| &item.parser_closure)
     }
 
-    pub fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
+    fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
         self.items.iter().map(|item| &item.var_type)
     }
 
-    pub fn long_options(&self) -> impl Iterator<Item = &LitStr> {
+    fn long_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
         self.items
             .iter()
-            .map(|item| item.long_opt.unwrap_or(LitStr::new("", Span::def_site())))
+            .map(|item| item.long_opt.as_ref())
+    }
+
+    fn short_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.items
+            .iter()
+            .map(|item| item.short_opt.as_ref())
     }
 }
 
@@ -54,12 +61,14 @@ impl Parse for ConfigStruct {
 
 impl ToTokens for ConfigStruct {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let empty_str = LitStr::new("", Span::call_site());
         let defaults = self.defaults();
         let names = self.names();
         let names_definition = self.names();
         let names_default = self.names();
-        let long_options = self.long_options();
-        let long_options2 = self.long_options();
+        let long_options = self.long_options().map(|o| o.unwrap_or(&empty_str));
+        let long_options2 = self.long_options().map(|o| o.unwrap_or(&empty_str));
+        let short_options = self.short_options().map(|o| o.unwrap_or(&empty_str));
         let parser_closures = self.parser_closures();
         let parser_names_definition = self.parser_names();
         let parser_names_creation = self.parser_names();
@@ -123,7 +132,7 @@ impl ToTokens for ConfigStruct {
 
                 #(
                     options_parser.opt(
-                        "",// #short_names
+                        #short_options,// short_names
                         #long_options2, // long argument
                         "", //option.help,
                         "", //option.hint,
@@ -147,6 +156,7 @@ struct ConfigItem {
     default_val: Expr,
     parser_closure: Expr, // Parses the config value based on the passed argument.
     long_opt: Option<LitStr>,
+    short_opt: Option<LitStr>,
 }
 
 impl Parse for ConfigItem {
@@ -161,6 +171,7 @@ impl Parse for ConfigItem {
         let mut parser = None;
         let mut var_type = None;
         let mut long_opt = None;
+        let mut short_opt = None;
         for opt in opts {
             match opt {
                 ItemOption::Name(n) => name = Some(n),
@@ -168,6 +179,7 @@ impl Parse for ConfigItem {
                 ItemOption::Parser(p) => parser = Some(p),
                 ItemOption::VarType(v) => var_type = Some(v),
                 ItemOption::LongOpt(o) => long_opt = Some(o),
+                ItemOption::ShortOpt(o) => short_opt = Some(o),
             }
         }
 
@@ -177,6 +189,7 @@ impl Parse for ConfigItem {
             parser_closure: parser.unwrap(),
             var_type: var_type.unwrap(),
             long_opt,
+            short_opt,
         })
     }
 }
@@ -184,7 +197,7 @@ impl Parse for ConfigItem {
 enum ItemOption {
     Name(Ident),
     LongOpt(LitStr),
-    //ShortOpt(String),
+    ShortOpt(LitStr),
     Def(Expr),
     VarType(Box<Type>),
     Parser(Expr),
@@ -214,6 +227,10 @@ impl Parse for ItemOption {
             "LONG_OPT" => {
                 let opt_name: LitStr = input.parse()?;
                 Ok(ItemOption::LongOpt(opt_name))
+            }
+            "SHORT_OPT" => {
+                let opt_name: LitStr = input.parse()?;
+                Ok(ItemOption::ShortOpt(opt_name))
             }
             _ => panic!("foo"), //Err(()),
         }
