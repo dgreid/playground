@@ -237,11 +237,12 @@ struct ConfigItem {
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
+        let name = input.parse()?;
+        let _: Token![:] = input.parse()?;
         let _paren_token: token::Paren = parenthesized!(content in input);
         let spec: Punctuated<ItemOption, Token![,]> =
             content.parse_terminated(ItemOption::parse)?;
 
-        let mut name = None;
         let mut default_val = None;
         let mut parser = None;
         let mut var_type = None;
@@ -249,7 +250,6 @@ impl Parse for ConfigItem {
         let mut short_opt = None;
         for var in spec {
             match var {
-                ItemOption::Name(n) => name = Some(n),
                 ItemOption::Def(d) => default_val = Some(d),
                 ItemOption::Parser(p) => parser = Some(p),
                 ItemOption::VarType(v) => var_type = Some(v),
@@ -259,7 +259,7 @@ impl Parse for ConfigItem {
         }
 
         Ok(ConfigItem {
-            name: name.unwrap(),
+            name: name,
             long_opt: long_opt.unwrap(),
             short_opt,
             config_type: if var_type.is_some() {
@@ -276,7 +276,6 @@ impl Parse for ConfigItem {
 }
 
 enum ItemOption {
-    Name(Ident),
     LongOpt(LitStr),
     ShortOpt(LitStr),
     Def(Expr),
@@ -289,10 +288,6 @@ impl Parse for ItemOption {
         let tag: Ident = input.parse()?;
         let _: Token![:] = input.parse()?;
         match tag.to_string().as_ref() {
-            "NAME" => {
-                let name = input.parse()?;
-                Ok(ItemOption::Name(name))
-            }
             "DEFAULT" => {
                 let def = input.parse()?;
                 Ok(ItemOption::Def(def))
