@@ -4,8 +4,9 @@ create_config!(
     (NAME: test_val,
      TYPE: u32,
      DEFAULT: 2,
-     PARSE: |value, cfg| {
-         let val = value.parse().unwrap();
+     PARSE: |values, cfg| {
+         // guaranteed there is at least one element in the array.
+         let val = values.get(0).unwrap().parse().unwrap();
          if cfg.limit {
              std::cmp::min(val, 100)
          } else {
@@ -15,8 +16,9 @@ create_config!(
     (NAME: limit,
      TYPE: bool,
      DEFAULT: Default::default(),
-     PARSE: |value, _cfg| {
-         if value.to_lowercase() == "true" {
+     PARSE: |values, _cfg| {
+         let arg = values.get(0).unwrap();
+         if arg.to_lowercase() == "true" {
              true
          } else {
              false

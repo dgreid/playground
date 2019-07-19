@@ -64,7 +64,7 @@ impl ToTokens for ConfigStruct {
         let code = quote! {
             struct Config {
                 #(#names_definition: #types),*,
-                #(#parser_names_definition: Box<dyn Fn(&str, &Config) -> #types2>),*
+                #(#parser_names_definition: Box<dyn Fn(Vec<String>, &Config) -> #types2>),*
             }
 
             impl Default for Config {
@@ -103,11 +103,7 @@ impl ToTokens for ConfigStruct {
                         let opt_name = #option_names;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                            if values.len() == 1 { // TODO - handle multiple instances
-                                for value in values {
-                                    cfg.#names = (cfg.#parser_names_call)(&value, &cfg);
-                                }
-                            }
+                            cfg.#names = (cfg.#parser_names_call)(values, &cfg);
                         }
                     )*
 
