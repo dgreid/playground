@@ -13,18 +13,41 @@ struct ConfigStruct {
     items: Punctuated<ConfigItem, Token![,]>,
 }
 
-
 impl ConfigStruct {
-    fn defaults(&self) -> impl Iterator<Item = &Expr> {
-        self.items.iter().map(|item| &item.default_val)
+    fn option_data(&self) -> impl Iterator<Item = &ConfigOption> {
+        self.items.iter().filter_map(|i| {
+            if let ConfigType::Opt(data) = &i.config_type {
+                Some(data)
+            } else {
+                None
+            }
+        })
     }
 
-    fn names(&self) -> impl Iterator<Item = &Ident> {
-        self.items.iter().map(|item| &item.name)
+    fn option_defaults(&self) -> impl Iterator<Item = &Expr> {
+        self.option_data().map(|d| &d.default_val)
+    }
+
+    fn options(&self) -> impl Iterator<Item = &ConfigItem> {
+        self.items.iter().filter(|i| match i.config_type {
+            ConfigType::Opt(_) => true,
+            _ => false,
+        })
+    }
+
+    fn flags(&self) -> impl Iterator<Item = &ConfigItem> {
+        self.items.iter().filter(|i| match i.config_type {
+            ConfigType::Flag => true,
+            _ => false,
+        })
     }
 
     fn option_names(&self) -> impl Iterator<Item = &Ident> {
-        self.items.iter().filter(|i| i.var_type.is_some()).map(|item| &item.name)
+        self.options().map(|item| &item.name)
+    }
+
+    fn flag_names(&self) -> impl Iterator<Item = &Ident> {
+        self.flags().map(|item| &item.name)
     }
 
     fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
@@ -35,23 +58,27 @@ impl ConfigStruct {
     }
 
     fn parser_closures(&self) -> impl Iterator<Item = &Expr> {
-        self.items.iter().map(|item| &item.parser_closure)
+        self.option_data().map(|item| &item.parser_closure)
     }
 
     fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
-        self.items.iter().filter_map(|item| item.var_type.as_ref())
+        self.option_data().map(|d| &d.var_type)
     }
 
-    fn long_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.items
-            .iter()
-            .map(|item| item.long_opt.as_ref())
+    fn long_options(&self) -> impl Iterator<Item = &LitStr> {
+        self.options().map(|item| &item.long_opt)
     }
 
     fn short_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.items
-            .iter()
-            .map(|item| item.short_opt.as_ref())
+        self.options().map(|item| item.short_opt.as_ref())
+    }
+
+    fn long_flags(&self) -> impl Iterator<Item = &LitStr> {
+        self.flags().map(|item| &item.long_opt)
+    }
+
+    fn short_flags(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.flags().map(|item| item.short_opt.as_ref())
     }
 }
 
@@ -66,31 +93,46 @@ impl Parse for ConfigStruct {
 impl ToTokens for ConfigStruct {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let empty_str = LitStr::new("", Span::call_site());
-        let defaults = self.defaults();
-        let names = self.names();
-        let names_default = self.names();
-        let long_options = self.long_options().map(|o| o.unwrap_or(&empty_str));
-        let long_options2 = self.long_options().map(|o| o.unwrap_or(&empty_str));
+        let defaults = self.option_defaults();
+        let option_names = self.option_names();
+        let flag_names = self.flag_names();
+        let flag_names2 = self.flag_names();
+        let long_options = self.long_options();
+        let long_options2 = self.long_options();
         let short_options = self.short_options().map(|o| o.unwrap_or(&empty_str));
+        let long_flags = self.long_flags();
+        let long_flags2 = self.long_flags();
+        let short_flags = self.short_flags().map(|o| o.unwrap_or(&empty_str));
         let parser_closures = self.parser_closures();
         let parser_names_definition = self.parser_names();
         let parser_names_creation = self.parser_names();
         let parser_names_call = self.parser_names();
-        let option_names = self.option_names();
+        let option_names2 = self.option_names();
+        let names_default = self.option_names();
         let types = self.var_types();
         let types2 = self.var_types();
 
+        let flag_names_default = self.flag_names();
+
         let code = quote! {
             struct Config {
-                #(#option_names: #types),*,
-                #(#parser_names_definition: Box<dyn Fn(Vec<String>, &Config) -> #types2>),*
+                #(
+                    #option_names: #types,
+                    #parser_names_definition: Box<dyn Fn(Vec<String>, &Config) -> #types2>,
+                )*
+
+                #(#flag_names: bool),*
             }
 
             impl Default for Config {
                 fn default() -> Self {
                     Config {
-                        #(#names_default: #defaults),*,
-                        #(#parser_names_creation: Box::new(#parser_closures)),*
+                        #(
+                            #names_default: #defaults,
+                            #parser_names_creation: Box::new(#parser_closures),
+                        )*
+
+                        #(#flag_names_default: false),*
                     }
                 }
             }
@@ -123,7 +165,15 @@ impl ToTokens for ConfigStruct {
                         let opt_name = #long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                            cfg.#names = (cfg.#parser_names_call)(values, &cfg);
+                            cfg.#option_names2 = (cfg.#parser_names_call)(values, &cfg);
+                        }
+                    )*
+
+                    // And flags
+                    #(
+                        let opt_name = #long_flags;
+                        if matches.opt_present(opt_name) {
+                            cfg.#flag_names2 = true;
                         }
                     )*
 
@@ -146,6 +196,17 @@ impl ToTokens for ConfigStruct {
                         );
                 )*
 
+                #(
+                    options_parser.opt(
+                        #short_flags,// short_names
+                        #long_flags2, // long argument
+                        "", //option.help,
+                        "", //option.hint,
+                        getopts::HasArg::No, // option.has_arg,
+                        getopts::Occur::Optional, //option.occur,
+                        );
+                )*
+
                 options_parser
             }
         };
@@ -154,21 +215,30 @@ impl ToTokens for ConfigStruct {
     }
 }
 
-// All the information about a particular configuration item.
-struct ConfigItem {
-    var_type: Option<Box<Type>>,
-    name: Ident,
+struct ConfigOption {
+    var_type: Box<Type>,
     default_val: Expr,
     parser_closure: Expr, // Parses the config value based on the passed argument.
-    long_opt: Option<LitStr>,
+}
+
+enum ConfigType {
+    Opt(ConfigOption),
+    Flag,
+}
+
+// All the information about a particular configuration item.
+struct ConfigItem {
+    name: Ident,
+    long_opt: LitStr,
     short_opt: Option<LitStr>,
+    config_type: ConfigType,
 }
 
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         let _paren_token: token::Paren = parenthesized!(content in input);
-        let opts: Punctuated<ItemOption, Token![,]> =
+        let spec: Punctuated<ItemOption, Token![,]> =
             content.parse_terminated(ItemOption::parse)?;
 
         let mut name = None;
@@ -177,8 +247,8 @@ impl Parse for ConfigItem {
         let mut var_type = None;
         let mut long_opt = None;
         let mut short_opt = None;
-        for opt in opts {
-            match opt {
+        for var in spec {
+            match var {
                 ItemOption::Name(n) => name = Some(n),
                 ItemOption::Def(d) => default_val = Some(d),
                 ItemOption::Parser(p) => parser = Some(p),
@@ -190,11 +260,17 @@ impl Parse for ConfigItem {
 
         Ok(ConfigItem {
             name: name.unwrap(),
-            default_val: default_val.unwrap(),
-            parser_closure: parser.unwrap(),
-            var_type: var_type,
-            long_opt,
+            long_opt: long_opt.unwrap(),
             short_opt,
+            config_type: if var_type.is_some() {
+                ConfigType::Opt(ConfigOption {
+                    default_val: default_val.unwrap(),
+                    parser_closure: parser.unwrap(),
+                    var_type: var_type.unwrap(),
+                })
+            } else {
+                ConfigType::Flag
+            },
         })
     }
 }
