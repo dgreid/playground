@@ -16,6 +16,7 @@ create_config!(
     }),
     (NAME: limit,
      LONG_OPT: "limit",
+     SHORT_OPT: "l",
      TYPE: bool,
      DEFAULT: Default::default(),
      PARSE: |values, _cfg| {

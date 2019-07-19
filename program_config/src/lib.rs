@@ -23,8 +23,12 @@ impl ConfigStruct {
         self.items.iter().map(|item| &item.name)
     }
 
+    fn option_names(&self) -> impl Iterator<Item = &Ident> {
+        self.items.iter().filter(|i| i.var_type.is_some()).map(|item| &item.name)
+    }
+
     fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
-        self.names().map(|n| {
+        self.option_names().map(|n| {
             let concatenated = format!("parse_{}", n);
             syn::Ident::new(&concatenated, n.span())
         })
@@ -35,7 +39,7 @@ impl ConfigStruct {
     }
 
     fn var_types(&self) -> impl Iterator<Item = &Box<Type>> {
-        self.items.iter().map(|item| &item.var_type)
+        self.items.iter().filter_map(|item| item.var_type.as_ref())
     }
 
     fn long_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
@@ -64,7 +68,6 @@ impl ToTokens for ConfigStruct {
         let empty_str = LitStr::new("", Span::call_site());
         let defaults = self.defaults();
         let names = self.names();
-        let names_definition = self.names();
         let names_default = self.names();
         let long_options = self.long_options().map(|o| o.unwrap_or(&empty_str));
         let long_options2 = self.long_options().map(|o| o.unwrap_or(&empty_str));
@@ -73,12 +76,13 @@ impl ToTokens for ConfigStruct {
         let parser_names_definition = self.parser_names();
         let parser_names_creation = self.parser_names();
         let parser_names_call = self.parser_names();
+        let option_names = self.option_names();
         let types = self.var_types();
         let types2 = self.var_types();
 
         let code = quote! {
             struct Config {
-                #(#names_definition: #types),*,
+                #(#option_names: #types),*,
                 #(#parser_names_definition: Box<dyn Fn(Vec<String>, &Config) -> #types2>),*
             }
 
@@ -103,6 +107,7 @@ impl ToTokens for ConfigStruct {
                     let matches = match opt_parser.parse(args) {
                         Ok(m) => m,
                         Err(e) => {
+                            println!("argument parsing error");
                             // todo - handle error.
                             return cfg;
                         }
@@ -151,7 +156,7 @@ impl ToTokens for ConfigStruct {
 
 // All the information about a particular configuration item.
 struct ConfigItem {
-    var_type: Box<Type>,
+    var_type: Option<Box<Type>>,
     name: Ident,
     default_val: Expr,
     parser_closure: Expr, // Parses the config value based on the passed argument.
@@ -187,7 +192,7 @@ impl Parse for ConfigItem {
             name: name.unwrap(),
             default_val: default_val.unwrap(),
             parser_closure: parser.unwrap(),
-            var_type: var_type.unwrap(),
+            var_type: var_type,
             long_opt,
             short_opt,
         })
