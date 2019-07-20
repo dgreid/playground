@@ -1,7 +1,7 @@
 extern crate program_config;
 use program_config::create_config;
 create_config!(
-    test_val: (
+    test_val: {
      LONG_OPT: "value",
      TYPE: u32,
      DEFAULT: 2,
@@ -13,11 +13,11 @@ create_config!(
          } else {
              val
          }
-    }),
-    limit: (
+    }},
+    limit: {
      LONG_OPT: "limit",
      SHORT_OPT: "l",
-    ),
+    },
 );
 
 fn main() {

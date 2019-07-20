@@ -6,7 +6,7 @@ use quote::quote;
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parenthesized, parse_macro_input, token, Expr, Ident, LitStr, Result, Token, Type};
+use syn::{braced, parse_macro_input, token, Expr, Ident, LitStr, Result, Token, Type};
 
 // The entire configuration space.
 struct ConfigStruct {
@@ -270,7 +270,7 @@ impl Parse for ConfigItem {
         let content;
         let name = input.parse()?;
         let _: Token![:] = input.parse()?;
-        let _paren_token: token::Paren = parenthesized!(content in input);
+        let _brace_token: token::Brace = braced!(content in input);
         let spec: Punctuated<ItemOption, Token![,]> =
             content.parse_terminated(ItemOption::parse)?;
 
