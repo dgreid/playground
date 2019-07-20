@@ -50,6 +50,20 @@ impl ConfigStruct {
         self.flags().map(|item| &item.name)
     }
 
+    fn flag_accessors(&self) -> impl Iterator<Item = Ident> + '_ {
+        self.flag_names().map(|n| {
+            let concatenated = format!("has_{}", n);
+            syn::Ident::new(&concatenated, n.span())
+        })
+    }
+
+    fn option_accessors(&self) -> impl Iterator<Item = Ident> + '_ {
+        self.option_names().map(|n| {
+            let concatenated = format!("get_{}", n);
+            syn::Ident::new(&concatenated, n.span())
+        })
+    }
+
     fn parser_names(&self) -> impl Iterator<Item = Ident> + '_ {
         self.option_names().map(|n| {
             let concatenated = format!("parse_{}", n);
@@ -97,6 +111,7 @@ impl ToTokens for ConfigStruct {
         let option_names = self.option_names();
         let flag_names = self.flag_names();
         let flag_names2 = self.flag_names();
+        let flag_names3 = self.flag_names();
         let long_options = self.long_options();
         let long_options2 = self.long_options();
         let short_options = self.short_options().map(|o| o.unwrap_or(&empty_str));
@@ -108,10 +123,13 @@ impl ToTokens for ConfigStruct {
         let parser_names_creation = self.parser_names();
         let parser_names_call = self.parser_names();
         let option_names2 = self.option_names();
+        let option_names3 = self.option_names();
+        let option_accessors = self.option_accessors();
         let names_default = self.option_names();
         let types = self.var_types();
         let types2 = self.var_types();
-
+        let option_types = self.var_types();
+        let flag_accessors = self.flag_accessors();
         let flag_names_default = self.flag_names();
 
         let code = quote! {
@@ -171,14 +189,27 @@ impl ToTokens for ConfigStruct {
 
                     // And flags
                     #(
-                        let opt_name = #long_flags;
-                        if matches.opt_present(opt_name) {
+                        if matches.opt_present(#long_flags) {
                             cfg.#flag_names2 = true;
                         }
                     )*
 
                     cfg
                 }
+
+                // accessors for each option.
+                #(
+                    pub fn #option_accessors(&self) -> &#option_types {
+                        &self.#option_names3
+                    }
+                )*
+
+                // accessors for each flag.
+                #(
+                    pub fn #flag_accessors(&self) -> bool {
+                        self.#flag_names3
+                    }
+                )*
             }
 
             fn build_options_parser() -> getopts::Options {

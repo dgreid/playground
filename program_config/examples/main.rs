@@ -33,7 +33,7 @@ fn main() {
     let c = Config::from_args(args);
     println!(
         "value: {} {}limited",
-        c.test_val,
-        if c.limit { "" } else { "un" }
+        c.get_test_val(),
+        if c.has_limit() { "" } else { "un" }
     );
 }
