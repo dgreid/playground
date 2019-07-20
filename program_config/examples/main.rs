@@ -2,21 +2,22 @@ extern crate program_config;
 use program_config::create_config;
 create_config!(
     test_val: {
-     LONG_OPT: "value",
-     TYPE: u32,
-     DEFAULT: 2,
-     PARSE: |values, cfg| {
-         // guaranteed there is at least one element in the array.
-         let val = values.get(0).unwrap().parse().unwrap();
-         if cfg.limit {
-             std::cmp::min(val, 100)
-         } else {
-             val
-         }
-    }},
+        long_opt: "value",
+        arg_type: u32,
+        default: 2,
+        parse: |values, cfg| {
+            // guaranteed there is at least one element in the array.
+            let val = values.get(0).unwrap().parse().unwrap();
+            if cfg.limit {
+                std::cmp::min(val, 100)
+            } else {
+                val
+            }
+        }
+    },
     limit: {
-     LONG_OPT: "limit",
-     SHORT_OPT: "l",
+        long_opt: "limit",
+        short_opt: "l",
     },
 );
 

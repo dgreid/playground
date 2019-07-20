@@ -319,23 +319,23 @@ impl Parse for ItemOption {
         let tag: Ident = input.parse()?;
         let _: Token![:] = input.parse()?;
         match tag.to_string().as_ref() {
-            "DEFAULT" => {
+            "default" => {
                 let def = input.parse()?;
                 Ok(ItemOption::Def(def))
             }
-            "PARSE" => {
+            "parse" => {
                 let parser = input.parse()?;
                 Ok(ItemOption::Parser(parser))
             }
-            "TYPE" => {
+            "arg_type" => {
                 let var_type: Box<Type> = input.parse()?;
                 Ok(ItemOption::VarType(var_type))
             }
-            "LONG_OPT" => {
+            "long_opt" => {
                 let opt_name: LitStr = input.parse()?;
                 Ok(ItemOption::LongOpt(opt_name))
             }
-            "SHORT_OPT" => {
+            "short_opt" => {
                 let opt_name: LitStr = input.parse()?;
                 Ok(ItemOption::ShortOpt(opt_name))
             }
