@@ -5,6 +5,8 @@ create_config!(
         long_opt: "value",
         arg_type: u32,
         default: 2,
+        help: "The value to print",
+        hint: "INT",
         parse: |values, cfg| {
             // guaranteed there is at least one element in the array.
             let val = values.get(0).unwrap().parse().unwrap();
@@ -18,6 +20,7 @@ create_config!(
     limit: {
         long_opt: "limit",
         short_opt: "l",
+        help: "If specified, limit the value",
     },
 );
 

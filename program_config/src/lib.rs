@@ -87,6 +87,14 @@ impl ConfigStruct {
         self.options().map(|item| item.short_opt.as_ref())
     }
 
+    fn option_helps(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.options().map(|item| item.help.as_ref())
+    }
+
+    fn option_hints(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.options().map(|item| item.hint.as_ref())
+    }
+
     fn long_flags(&self) -> impl Iterator<Item = &LitStr> {
         self.flags().map(|item| &item.long_opt)
     }
@@ -94,6 +102,15 @@ impl ConfigStruct {
     fn short_flags(&self) -> impl Iterator<Item = Option<&LitStr>> {
         self.flags().map(|item| item.short_opt.as_ref())
     }
+
+    fn flag_helps(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.flags().map(|item| item.help.as_ref())
+    }
+
+    fn flag_hints(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.flags().map(|item| item.hint.as_ref())
+    }
+
 }
 
 impl Parse for ConfigStruct {
@@ -125,12 +142,16 @@ impl ToTokens for ConfigStruct {
         let option_names2 = self.option_names();
         let option_names3 = self.option_names();
         let option_accessors = self.option_accessors();
+        let option_helps = self.option_helps().map(|h| h.unwrap_or(&empty_str));
+        let option_hints = self.option_hints().map(|h| h.unwrap_or(&empty_str));
         let names_default = self.option_names();
         let types = self.var_types();
         let types2 = self.var_types();
         let option_types = self.var_types();
         let flag_accessors = self.flag_accessors();
         let flag_names_default = self.flag_names();
+        let flag_helps = self.flag_helps().map(|h| h.unwrap_or(&empty_str));
+        let flag_hints = self.flag_hints().map(|h| h.unwrap_or(&empty_str));
 
         let code = quote! {
             struct Config {
@@ -220,8 +241,8 @@ impl ToTokens for ConfigStruct {
                     options_parser.opt(
                         #short_options,// short_names
                         #long_options2, // long argument
-                        "", //option.help,
-                        "", //option.hint,
+                        #option_helps, //option.help,
+                        #option_hints, //option.hint,
                         getopts::HasArg::Yes, // option.has_arg,
                         getopts::Occur::Optional, //option.occur,
                         );
@@ -231,8 +252,8 @@ impl ToTokens for ConfigStruct {
                     options_parser.opt(
                         #short_flags,// short_names
                         #long_flags2, // long argument
-                        "", //option.help,
-                        "", //option.hint,
+                        #flag_helps, //option.help,
+                        #flag_hints, //option.hint,
                         getopts::HasArg::No, // option.has_arg,
                         getopts::Occur::Optional, //option.occur,
                         );
@@ -263,6 +284,8 @@ struct ConfigItem {
     long_opt: LitStr,
     short_opt: Option<LitStr>,
     config_type: ConfigType,
+    help: Option<LitStr>,
+    hint: Option<LitStr>,
 }
 
 impl Parse for ConfigItem {
@@ -274,11 +297,14 @@ impl Parse for ConfigItem {
         let spec: Punctuated<ItemOption, Token![,]> =
             content.parse_terminated(ItemOption::parse)?;
 
+        // TODO - fix unwraps.
         let mut default_val = None;
         let mut parser = None;
         let mut var_type = None;
         let mut long_opt = None;
         let mut short_opt = None;
+        let mut help = None;
+        let mut hint = None;
         for var in spec {
             match var {
                 ItemOption::Def(d) => default_val = Some(d),
@@ -286,6 +312,8 @@ impl Parse for ConfigItem {
                 ItemOption::VarType(v) => var_type = Some(v),
                 ItemOption::LongOpt(o) => long_opt = Some(o),
                 ItemOption::ShortOpt(o) => short_opt = Some(o),
+                ItemOption::Help(h) => help = Some(h),
+                ItemOption::Hint(h) => hint = Some(h),
             }
         }
 
@@ -302,11 +330,15 @@ impl Parse for ConfigItem {
             } else {
                 ConfigType::Flag
             },
+            help,
+            hint
         })
     }
 }
 
 enum ItemOption {
+    Help(LitStr),
+    Hint(LitStr),
     LongOpt(LitStr),
     ShortOpt(LitStr),
     Def(Expr),
@@ -338,6 +370,14 @@ impl Parse for ItemOption {
             "short_opt" => {
                 let opt_name: LitStr = input.parse()?;
                 Ok(ItemOption::ShortOpt(opt_name))
+            }
+            "help" => {
+                let help_str: LitStr = input.parse()?;
+                Ok(ItemOption::Help(help_str))
+            }
+            "hint" => {
+                let hint_str: LitStr = input.parse()?;
+                Ok(ItemOption::Hint(hint_str))
             }
             _ => panic!("foo"), //Err(()),
         }
