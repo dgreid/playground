@@ -237,6 +237,8 @@ impl ToTokens for ConfigStruct {
                 let mut options_parser = getopts::Options::new();
                 options_parser.optflag("h", "help", "Print this help menu");
 
+                // TODO allow required args vs optional args.
+                // need to allow options in the Config class.
                 #(
                     options_parser.opt(
                         #short_options,// short_names
@@ -291,13 +293,13 @@ struct ConfigItem {
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
-        let name = input.parse()?;
+        let name: Ident = input.parse()?;
         let _: Token![:] = input.parse()?;
         let _brace_token: token::Brace = braced!(content in input);
         let spec: Punctuated<ItemOption, Token![,]> =
             content.parse_terminated(ItemOption::parse)?;
+        let error_span = name.span();
 
-        // TODO - fix unwraps.
         let mut default_val = None;
         let mut parser = None;
         let mut var_type = None;
@@ -317,15 +319,20 @@ impl Parse for ConfigItem {
             }
         }
 
+        let long_opt = long_opt.ok_or(
+            Error::new(error_span,
+            "Long option string is required, specify with `long_opt`")
+        )?;
+
         Ok(ConfigItem {
             name: name,
-            long_opt: long_opt.unwrap(),
+            long_opt: long_opt,
             short_opt,
-            config_type: if var_type.is_some() {
+            config_type: if let Some(var_type) = var_type {
                 ConfigType::Opt(ConfigOption {
-                    default_val: default_val.unwrap(),
-                    parser_closure: parser.unwrap(),
-                    var_type: var_type.unwrap(),
+                    default_val: default_val.ok_or(Error::new(error_span, "A default value must be given with `default_val` for options with arguments"))?,
+                    parser_closure: parser.ok_or(Error::new(error_span, "A parser must be specified with `parse` for options with arguments"))?,
+                    var_type: var_type,
                 })
             } else {
                 ConfigType::Flag
