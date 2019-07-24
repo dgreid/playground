@@ -6,7 +6,7 @@ use quote::quote;
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{braced, parse_macro_input, token, Expr, Ident, LitStr, Result, Token, Type};
+use syn::{braced, parse_macro_input, token, Error, Expr, Ident, LitStr, Result, Token, Type};
 
 // The entire configuration space.
 struct ConfigStruct {
@@ -379,7 +379,7 @@ impl Parse for ItemOption {
                 let hint_str: LitStr = input.parse()?;
                 Ok(ItemOption::Hint(hint_str))
             }
-            _ => panic!("foo"), //Err(()),
+            _ => Err(Error::new(tag.span(), "Unknown option attribute")),
         }
     }
 }
