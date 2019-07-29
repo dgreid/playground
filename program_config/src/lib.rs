@@ -28,6 +28,10 @@ impl ConfigStruct {
         self.option_data().map(|d| &d.default_val)
     }
 
+    fn args(&self) -> impl Iterator<Item = &ConfigItem> {
+        self.items.iter()
+    }
+
     fn options(&self) -> impl Iterator<Item = &ConfigItem> {
         self.items.iter().filter(|i| match i.config_type {
             ConfigType::Opt(_) => true,
@@ -79,38 +83,29 @@ impl ConfigStruct {
         self.option_data().map(|d| &d.var_type)
     }
 
+    fn long_args(&self) -> impl Iterator<Item = &LitStr> {
+        self.args().map(|item| &item.long_opt)
+    }
+
     fn long_options(&self) -> impl Iterator<Item = &LitStr> {
         self.options().map(|item| &item.long_opt)
     }
 
-    fn short_options(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.options().map(|item| item.short_opt.as_ref())
+    fn short_args(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.args().map(|item| item.short_opt.as_ref())
     }
 
-    fn option_helps(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.options().map(|item| item.help.as_ref())
+    fn arg_helps(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.args().map(|item| item.help.as_ref())
     }
 
-    fn option_hints(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.options().map(|item| item.hint.as_ref())
+    fn arg_hints(&self) -> impl Iterator<Item = Option<&LitStr>> {
+        self.args().map(|item| item.hint.as_ref())
     }
 
     fn long_flags(&self) -> impl Iterator<Item = &LitStr> {
         self.flags().map(|item| &item.long_opt)
     }
-
-    fn short_flags(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.flags().map(|item| item.short_opt.as_ref())
-    }
-
-    fn flag_helps(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.flags().map(|item| item.help.as_ref())
-    }
-
-    fn flag_hints(&self) -> impl Iterator<Item = Option<&LitStr>> {
-        self.flags().map(|item| item.hint.as_ref())
-    }
-
 }
 
 impl Parse for ConfigStruct {
@@ -130,11 +125,9 @@ impl ToTokens for ConfigStruct {
         let flag_names2 = self.flag_names();
         let flag_names3 = self.flag_names();
         let long_options = self.long_options();
-        let long_options2 = self.long_options();
-        let short_options = self.short_options().map(|o| o.unwrap_or(&empty_str));
+        let long_args = self.long_args();
+        let short_args = self.short_args().map(|o| o.unwrap_or(&empty_str));
         let long_flags = self.long_flags();
-        let long_flags2 = self.long_flags();
-        let short_flags = self.short_flags().map(|o| o.unwrap_or(&empty_str));
         let parser_closures = self.parser_closures();
         let parser_names_definition = self.parser_names();
         let parser_names_creation = self.parser_names();
@@ -142,16 +135,20 @@ impl ToTokens for ConfigStruct {
         let option_names2 = self.option_names();
         let option_names3 = self.option_names();
         let option_accessors = self.option_accessors();
-        let option_helps = self.option_helps().map(|h| h.unwrap_or(&empty_str));
-        let option_hints = self.option_hints().map(|h| h.unwrap_or(&empty_str));
+        let arg_helps = self.arg_helps().map(|h| h.unwrap_or(&empty_str));
+        let arg_hints = self.arg_hints().map(|h| h.unwrap_or(&empty_str));
         let names_default = self.option_names();
         let types = self.var_types();
         let types2 = self.var_types();
         let option_types = self.var_types();
         let flag_accessors = self.flag_accessors();
         let flag_names_default = self.flag_names();
-        let flag_helps = self.flag_helps().map(|h| h.unwrap_or(&empty_str));
-        let flag_hints = self.flag_hints().map(|h| h.unwrap_or(&empty_str));
+        let has_args = self.args().map(|i| {
+            match i.config_type {
+                ConfigType::Opt(_) => quote! {getopts::HasArg::Yes}, 
+                ConfigType::Flag =>  quote! {getopts::HasArg::No},
+            }
+        });
 
         let code = quote! {
             struct Config {
@@ -241,22 +238,11 @@ impl ToTokens for ConfigStruct {
                 // need to allow options in the Config class.
                 #(
                     options_parser.opt(
-                        #short_options,// short_names
-                        #long_options2, // long argument
-                        #option_helps, //option.help,
-                        #option_hints, //option.hint,
-                        getopts::HasArg::Yes, // option.has_arg,
-                        getopts::Occur::Optional, //option.occur,
-                        );
-                )*
-
-                #(
-                    options_parser.opt(
-                        #short_flags,// short_names
-                        #long_flags2, // long argument
-                        #flag_helps, //option.help,
-                        #flag_hints, //option.hint,
-                        getopts::HasArg::No, // option.has_arg,
+                        #short_args,// short_names
+                        #long_args, // long argument
+                        #arg_helps, //option.help,
+                        #arg_hints, //option.hint,
+                        #has_args, //option.has_arg,
                         getopts::Occur::Optional, //option.occur,
                         );
                 )*
