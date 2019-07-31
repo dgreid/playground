@@ -24,8 +24,8 @@ impl ConfigStruct {
         })
     }
 
-    fn option_defaults(&self) -> impl Iterator<Item = &Expr> {
-        self.option_data().map(|d| &d.default_val)
+    fn option_defaults(&self) -> impl Iterator<Item = Option<&Expr>> {
+        self.option_data().map(|d| d.default_val.as_ref())
     }
 
     fn args(&self) -> impl Iterator<Item = &ConfigItem> {
@@ -119,7 +119,12 @@ impl Parse for ConfigStruct {
 impl ToTokens for ConfigStruct {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let empty_str = LitStr::new("", Span::call_site());
-        let defaults = self.option_defaults();
+        let defaults = self.option_defaults().map(|def| {
+            match def {
+                None => quote!{ Default::default() },
+                Some(d) => quote!{#d}
+            }
+        });
         let option_names = self.option_names();
         let flag_names = self.flag_names();
         let flag_names2 = self.flag_names();
@@ -149,8 +154,31 @@ impl ToTokens for ConfigStruct {
                 ConfigType::Flag =>  quote! {getopts::HasArg::No},
             }
         });
+        let is_required = self.args().map(|i| {
+            match &i.config_type {
+                ConfigType::Opt(d) => if d.default_val.is_some() {
+                    quote! {getopts::Occur::Optional}
+                } else {
+                    quote! {getopts::Occur::Req}
+                }
+                ConfigType::Flag =>  quote! {getopts::Occur::Optional},
+            }
+        });
 
         let code = quote! {
+            enum ConfigError {
+                ParsingArgs(getopts::Fail),
+            }
+            //pub type ConfigResult<T> = std::result::Result<T, getopts::Fail>;
+ 
+            impl std::fmt::Display for ConfigError {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    match self {
+                        ConfigError::ParsingArgs(e) => write!(f, "Error parsing args: {}", e),
+                    }
+                }
+            }
+
             struct Config {
                 #(
                     #option_names: #types,
@@ -160,7 +188,7 @@ impl ToTokens for ConfigStruct {
                 #(#flag_names: bool),*
             }
 
-            impl Default for Config {
+            impl Config {
                 fn default() -> Self {
                     Config {
                         #(
@@ -171,10 +199,8 @@ impl ToTokens for ConfigStruct {
                         #(#flag_names_default: false),*
                     }
                 }
-            }
 
-            impl Config {
-                pub fn from_args<T>(args: T) -> Config
+                pub fn from_args<T>(args: T) -> std::result::Result<Config, ConfigError>
                 where
                     T: IntoIterator,
                     T::Item: AsRef<std::ffi::OsStr>
@@ -182,14 +208,7 @@ impl ToTokens for ConfigStruct {
                     let mut cfg = Self::default();
 
                     let opt_parser = build_options_parser();
-                    let matches = match opt_parser.parse(args) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            println!("argument parsing error");
-                            // todo - handle error.
-                            return cfg;
-                        }
-                    };
+                    let matches = opt_parser.parse(args).unwrap();//map_err(ConfigError::ParsingArgs)?;
                     if matches.opt_present("h") {
                         let brief = format!("Usage: TODO [options]");
                         print!("{}", opt_parser.usage(&brief));
@@ -212,7 +231,7 @@ impl ToTokens for ConfigStruct {
                         }
                     )*
 
-                    cfg
+                    Ok(cfg)
                 }
 
                 // accessors for each option.
@@ -243,7 +262,7 @@ impl ToTokens for ConfigStruct {
                         #arg_helps, //option.help,
                         #arg_hints, //option.hint,
                         #has_args, //option.has_arg,
-                        getopts::Occur::Optional, //option.occur,
+                        #is_required, //option.occur,
                         );
                 )*
 
@@ -257,7 +276,7 @@ impl ToTokens for ConfigStruct {
 
 struct ConfigOption {
     var_type: Box<Type>,
-    default_val: Expr,
+    default_val: Option<Expr>,
     parser_closure: Expr, // Parses the config value based on the passed argument.
 }
 
@@ -316,7 +335,7 @@ impl Parse for ConfigItem {
             short_opt,
             config_type: if let Some(var_type) = var_type {
                 ConfigType::Opt(ConfigOption {
-                    default_val: default_val.ok_or(Error::new(error_span, "A default value must be given with `default_val` for options with arguments"))?,
+                    default_val: default_val,
                     parser_closure: parser.ok_or(Error::new(error_span, "A parser must be specified with `parse` for options with arguments"))?,
                     var_type: var_type,
                 })

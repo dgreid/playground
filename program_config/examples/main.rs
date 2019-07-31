@@ -4,7 +4,6 @@ create_config!(
     test_val: {
         long_opt: "value",
         arg_type: u32,
-        default: 2,
         help: "The value to print",
         hint: "INT",
         parse: |values, cfg| {
@@ -15,6 +14,19 @@ create_config!(
             } else {
                 val
             }
+        }
+    },
+    max: {
+        long_opt: "max",
+        short_opt: "m",
+        arg_type: u32,
+        default: 10,
+        help: "The max value",
+        hint: "INT",
+        parse: |values, _| {
+            // guaranteed there is at least one element in the array.
+            let val = values.get(0).unwrap().parse().unwrap();
+            val
         }
     },
     limit: {
@@ -31,10 +43,11 @@ fn main() {
         return;
     }
 
-    let c = Config::default();
-    assert_eq!(c.test_val, 2u32);
-    assert_eq!(c.limit, false);
-    let c = Config::from_args(args);
+    let c = match 
+        Config::from_args(args) {
+            Ok(c) => c,
+            Err(e) => panic!("parsing config {}", e),
+        };
     println!(
         "value: {} {}limited",
         c.get_test_val(),
