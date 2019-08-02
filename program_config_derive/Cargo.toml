@@ -1,0 +1,17 @@
+[package]
+name = "program_config_derive"
+version = "0.1.0"
+authors = ["Dylan Reid <dgreid@chromium.org>"]
+edition = "2018"
+
+[dependencies]
+getopts = "*"
+quote = "*"
+proc-macro2 = "*"
+
+[dependencies.syn]
+version = "*"
+features = ["full"]
+
+[lib]
+proc-macro = true
