@@ -1,10 +1,11 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Lit, Meta};
+use syn::{parse_macro_input, Data, DeriveInput, Ident, Lit, Meta};
 
-#[proc_macro_derive(ConfigStruct, attributes(required))]
+#[proc_macro_derive(ConfigStruct, attributes(parse, required))]
 pub fn config_struct(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
@@ -42,6 +43,41 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
         .iter()
         .filter_map(|f| f.ident.as_ref())
         .map(|_| quote!(getopts::HasArg::Yes));
+
+    let parsers = data
+        .fields
+        .iter()
+        .map(|f| {
+            f.attrs
+                .iter()
+                .find(|a| {
+                    a.parse_meta()
+                        .map(|m| {
+                            match m {
+                                Meta::NameValue(name_value) => {
+                                    if name_value.ident.to_string() == "parse" {
+                                        return true;
+                                    }
+                                }
+                                _ => (),
+                            }
+                            false
+                        })
+                        .unwrap_or(false)
+                })
+                .unwrap()
+        })
+        .map(|attr| {
+            if let Meta::NameValue(name_value) = attr.parse_meta().unwrap() {
+                if let Lit::Str(lit_str) = name_value.lit {
+                    Ident::new(&lit_str.value(), Span::call_site())
+                } else {
+                    Ident::new("a", Span::call_site())
+                }
+            } else {
+                Ident::new("a", Span::call_site())
+            }
+        });
 
     let is_required = data.fields.iter().map(|f| {
         if f.attrs.iter().any(|a| {
@@ -95,7 +131,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                         let opt_name = #long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                           cfg.#member_idents = 0;//(cfg.#parser_names_call)(values, &cfg);
+                            cfg.#member_idents = #parsers(&values[0]);
                         }
                     )*
 
