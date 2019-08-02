@@ -50,34 +50,10 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
         .map(|f| {
             f.attrs
                 .iter()
-                .find(|a| {
-                    a.parse_meta()
-                        .map(|m| {
-                            match m {
-                                Meta::NameValue(name_value) => {
-                                    if name_value.ident.to_string() == "parse" {
-                                        return true;
-                                    }
-                                }
-                                _ => (),
-                            }
-                            false
-                        })
-                        .unwrap_or(false)
-                })
+                .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
                 .unwrap()
         })
-        .map(|attr| {
-            if let Meta::NameValue(name_value) = attr.parse_meta().unwrap() {
-                if let Lit::Str(lit_str) = name_value.lit {
-                    Ident::new(&lit_str.value(), Span::call_site())
-                } else {
-                    Ident::new("a", Span::call_site())
-                }
-            } else {
-                Ident::new("a", Span::call_site())
-            }
-        });
+        .map(|attr| Ident::new("parse_u32", Span::call_site()));
 
     let is_required = data.fields.iter().map(|f| {
         if f.attrs.iter().any(|a| {
