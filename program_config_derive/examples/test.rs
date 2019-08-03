@@ -7,17 +7,25 @@ pub fn parse_u32(str_in: &str) -> u32 {
 }
 
 #[derive(Default, ConfigStruct)]
-struct Foo {
+struct Config {
     #[required = "false"]
-    #[parse = "parse_u32"]
-    a: u32,
+    #[parse {|a| parse_u32(a)}]
+    all: u32,
     #[required = "true"]
-    #[parse = "parse_u32"]
-    b: u32,
+    #[parse {|a| {println!("val string {}", a);parse_u32(a)}}]
+    value: u32,
 }
 
 fn main() {
-    let foo = Foo { a: 3, b: 4 };
+    let mut args = std::env::args();
+    if args.next().is_none() {
+        println!("expected executable name");
+        return;
+    }
 
-    println!("foo.a = {} {}", foo.a, foo.get_b());
+    let c = match Config::from_args(args) {
+        Ok(c) => c,
+        Err(_) => panic!("parsing config "),
+    };
+    println!("value: {} {}limited", c.get_value(), "un");
 }

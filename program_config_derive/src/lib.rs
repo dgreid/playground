@@ -3,7 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Ident, Lit, Meta};
+use syn::{parse_macro_input, Data, DeriveInput, Expr, Ident, Lit, Meta};
 
 #[proc_macro_derive(ConfigStruct, attributes(parse, required))]
 pub fn config_struct(input: TokenStream) -> TokenStream {
@@ -20,6 +20,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     };
 
     let member_idents = data.fields.iter().filter_map(|f| f.ident.as_ref());
+    let member_idents2 = data.fields.iter().filter_map(|f| f.ident.as_ref());
     let long_options = data
         .fields
         .iter()
@@ -53,7 +54,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
                 .unwrap()
         })
-        .map(|attr| Ident::new("parse_u32", Span::call_site()));
+        .map(|attr| syn::parse2::<Expr>(attr.tts.clone()).unwrap());
 
     let is_required = data.fields.iter().map(|f| {
         if f.attrs.iter().any(|a| {
@@ -75,16 +76,16 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 })
                 .unwrap_or(false)
         }) {
-            quote!(getopts::Occur::Optional)
-        } else {
             quote!(getopts::Occur::Req)
+        } else {
+            quote!(getopts::Occur::Optional)
         }
     });
 
     let expanded = quote! {
         impl #struct_name {
         #(
-            fn #accessor_names(&self) -> u32 {2}
+            fn #accessor_names(&self) -> u32 {self.#member_idents2}
          )*
 
                 pub fn from_args<T>(args: T) -> std::result::Result<#struct_name, ()>
