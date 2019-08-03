@@ -2,17 +2,13 @@ extern crate program_config_derive;
 
 use program_config_derive::ConfigStruct;
 
-pub fn parse_u32(str_in: &str) -> u32 {
-    str_in.parse().unwrap()
-}
-
 #[derive(Default, ConfigStruct)]
 struct Config {
     #[required = "false"]
-    #[parse {|a| parse_u32(a)}]
+    #[parse {|a: &str| {println!("val string {}", a);a.parse().unwrap()}}]
     all: u32,
     #[required = "true"]
-    #[parse {|a| {println!("val string {}", a);parse_u32(a)}}]
+    #[parse {|a: &str| {println!("val string {}", a);a.parse().unwrap()}}]
     value: u32,
 }
 
