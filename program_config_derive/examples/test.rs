@@ -5,10 +5,10 @@ use program_config_derive::ConfigStruct;
 #[derive(Default, ConfigStruct)]
 struct Config {
     #[required = "false"]
-    #[parse {|a: &str| {println!("val string {}", a);a.parse().unwrap()}}]
+    #[parse {|a: &str| {println!("val string {}", a);a.parse()}}]
     all: u32,
     #[required = "true"]
-    #[parse {|a: &str| {println!("val string {}", a);a.parse().unwrap()}}]
+    #[parse {|a: &str| {println!("val string {}", a);a.parse()}}]
     value: u32,
 }
 

@@ -38,7 +38,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
             let concatenated = format!("get_{}", n);
             syn::Ident::new(&concatenated, n.span())
         });
-    // TODO
+    // TODO allow flags
     let has_args = data
         .fields
         .iter()
@@ -108,7 +108,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                         let opt_name = #long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                            cfg.#member_idents = #parsers(&values[0]);
+                            cfg.#member_idents = #parsers(&values[0])?;
                         }
                     )*
 
