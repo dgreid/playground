@@ -108,7 +108,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                         let opt_name = #long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                            cfg.#member_idents = #parsers(&values[0])?;
+                            cfg.#member_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
                         }
                     )*
 
