@@ -140,6 +140,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     let expanded = quote! {
 
     enum ConfigError {
+        EmptyArguments,
         ParsingArg(Box<std::error::Error>),
         ParsingArgs(getopts::Fail),
     }
@@ -149,17 +150,22 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
             fn #accessor_names(&self) -> #member_types {self.#member_idents}
          )*
 
-        pub fn from_args<T>(args: T) -> std::result::Result<#struct_name, ConfigError>
+        pub fn from_args<T>(mut args: T) -> std::result::Result<#struct_name, ConfigError>
             where
-                T: IntoIterator,
-                T::Item: AsRef<std::ffi::OsStr>
+                T: Iterator,
+                T::Item: AsRef<std::ffi::OsStr>,
+                T::Item: std::fmt::Display,
             {
+                let program_name = match args.next() {
+                    Some(n) => n,
+                    None => { return Err(ConfigError::EmptyArguments); }
+                };
                 let mut cfg = Self::default();
 
                 let opt_parser = build_options_parser();
                 let matches = opt_parser.parse(args).map_err(ConfigError::ParsingArgs)?;
                 if matches.opt_present("h") {
-                    let brief = format!("Usage: TODO [options]");
+                    let brief = format!("Usage: {} [options]", program_name);
                     print!("{}", opt_parser.usage(&brief));
                     std::process::exit(0);
                 }

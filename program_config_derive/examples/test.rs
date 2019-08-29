@@ -15,13 +15,7 @@ struct Config {
 }
 
 fn main() {
-    let mut args = std::env::args();
-    if args.next().is_none() {
-        println!("expected executable name");
-        return;
-    }
-
-    let c = match Config::from_args(args) {
+    let c = match Config::from_args(std::env::args()) {
         Ok(c) => c,
         Err(_) => panic!("parsing config "),
     };
