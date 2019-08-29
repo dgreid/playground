@@ -136,65 +136,70 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! {
-        impl #struct_name {
+
+    enum ConfigError {
+        ParsingArgs,
+    }
+
+    impl #struct_name {
         #(
             fn #accessor_names(&self) -> #member_types {self.#member_idents}
          )*
 
-                pub fn from_args<T>(args: T) -> std::result::Result<#struct_name, ()>
-                where
-                    T: IntoIterator,
-                    T::Item: AsRef<std::ffi::OsStr>
-                {
-                    let mut cfg = Self::default();
+        pub fn from_args<T>(args: T) -> std::result::Result<#struct_name, ConfigError>
+            where
+                T: IntoIterator,
+                T::Item: AsRef<std::ffi::OsStr>
+            {
+                let mut cfg = Self::default();
 
-                    let opt_parser = build_options_parser();
-                    let matches = opt_parser.parse(args).unwrap();//map_err(ConfigError::ParsingArgs)?;
-                    if matches.opt_present("h") {
-                        let brief = format!("Usage: TODO [options]");
-                        print!("{}", opt_parser.usage(&brief));
-                        std::process::exit(0);
-                    }
-
-                    // Set each option if it is specified.
-                    #(
-                        let opt_name = #arg_long_options;
-                        if matches.opt_present(opt_name) {
-                            let values = matches.opt_strs(opt_name);
-                            cfg.#argument_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
-                        }
-                    )*
-
-                    // And flags
-                    #(
-                        let opt_name = #flag_long_options;
-                        if matches.opt_present(opt_name) {
-                            let values = matches.opt_strs(opt_name);
-                            cfg.#flag_idents = true;
-                        }
-                    )*
-
-                    Ok(cfg)
+                let opt_parser = build_options_parser();
+                let matches = opt_parser.parse(args).map_err(|_| ConfigError::ParsingArgs)?;
+                if matches.opt_present("h") {
+                    let brief = format!("Usage: TODO [options]");
+                    print!("{}", opt_parser.usage(&brief));
+                    std::process::exit(0);
                 }
 
-        }
-            fn build_options_parser() -> getopts::Options {
-                let mut options_parser = getopts::Options::new();
-                options_parser.optflag("h", "help", "Print this help menu");
-
+                // Set each option if it is specified.
                 #(
-                    options_parser.opt(
-                        "",// short_names
-                        #long_options, // long argument
-                        "", //option.help,
-                        "", //option.hint,
-                        #has_args, //option.has_arg,
-                        #is_required, //option.occur,
-                        );
+                    let opt_name = #arg_long_options;
+                    if matches.opt_present(opt_name) {
+                        let values = matches.opt_strs(opt_name);
+                        cfg.#argument_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
+                    }
                 )*
 
-                options_parser
+                // And flags
+                #(
+                    let opt_name = #flag_long_options;
+                    if matches.opt_present(opt_name) {
+                        let values = matches.opt_strs(opt_name);
+                        cfg.#flag_idents = true;
+                    }
+                )*
+
+                Ok(cfg)
             }
+        }
+
+        fn build_options_parser() -> getopts::Options {
+            let mut options_parser = getopts::Options::new();
+            options_parser.optflag("h", "help", "Print this help menu");
+
+            #(
+                options_parser.opt(
+                    "",// short_names
+                    #long_options, // long argument
+                    "", //option.help,
+                    "", //option.hint,
+                    #has_args, //option.has_arg,
+                    #is_required, //option.occur,
+                    );
+            )*
+
+            options_parser
+        }
     };
 
     TokenStream::from(expanded)
