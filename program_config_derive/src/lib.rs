@@ -1,9 +1,63 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{self, Span};
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Expr, Ident, Lit, Meta};
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Expr, Field, Ident, Lit, Meta};
+
+// Returns an iterator over the struct's field's names converted to strings.
+fn get_long_options(data: &DataStruct) -> impl Iterator<Item = String> + '_ {
+    data.fields
+        .iter()
+        .filter_map(|f| f.ident.as_ref().map(|ident| ident.to_string()))
+}
+
+// Returns an iterator over the struct's fields that are arguments as opposed to flags.
+fn arguments(data: &DataStruct) -> impl Iterator<Item = &Field> + '_ {
+    data.fields.iter().filter(|field| {
+        field
+            .attrs
+            .iter()
+            .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
+            .is_some()
+    })
+}
+
+// Returns an iterator over the struct's fields that are flags as opposed to arguments.
+fn flags(data: &DataStruct) -> impl Iterator<Item = &Field> + '_ {
+    data.fields.iter().filter(|field| {
+        field
+            .attrs
+            .iter()
+            .find(|attr| attr.path.is_ident(Ident::new("present", Span::call_site())))
+            .is_some()
+    })
+}
+
+fn argument_long_options(data: &DataStruct) -> impl Iterator<Item = String> + '_ {
+    arguments(data).filter_map(|f| f.ident.as_ref().map(|ident| ident.to_string()))
+}
+
+fn flag_long_options(data: &DataStruct) -> impl Iterator<Item = String> + '_ {
+    flags(data).filter_map(|f| f.ident.as_ref().map(|ident| ident.to_string()))
+}
+
+// Used to generate the `quote!`ed `HasArg` option to be used with getopts for each of the struct's
+// fields.
+fn has_args(data: &DataStruct) -> impl Iterator<Item = proc_macro2::TokenStream> + '_ {
+    data.fields.iter().map(|field| {
+        if field
+            .attrs
+            .iter()
+            .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
+            .is_some()
+        {
+            quote!(getopts::HasArg::Yes)
+        } else {
+            quote!(getopts::HasArg::No)
+        }
+    })
+}
 
 #[proc_macro_derive(ConfigStruct, attributes(parse, required))]
 pub fn config_struct(input: TokenStream) -> TokenStream {
@@ -19,16 +73,12 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
         }
     };
 
+    let argument_idents = arguments(&data).filter_map(|f| f.ident.as_ref());
+    let flag_idents = flags(&data).filter_map(|f| f.ident.as_ref());
     let member_idents = data.fields.iter().filter_map(|f| f.ident.as_ref());
-    let member_idents2 = data.fields.iter().filter_map(|f| f.ident.as_ref());
-    let long_options = data
-        .fields
-        .iter()
-        .filter_map(|f| f.ident.as_ref().map(|i| i.to_string()));
-    let long_options2 = data
-        .fields
-        .iter()
-        .filter_map(|f| f.ident.as_ref().map(|i| i.to_string()));
+    let long_options = get_long_options(&data);
+    let arg_long_options = argument_long_options(&data);
+    let flag_long_options = flag_long_options(&data);
 
     let accessor_names = data
         .fields
@@ -39,22 +89,32 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
             syn::Ident::new(&concatenated, n.span())
         });
     // TODO allow flags
-    let has_args = data
-        .fields
-        .iter()
-        .filter_map(|f| f.ident.as_ref())
-        .map(|_| quote!(getopts::HasArg::Yes));
+    let has_args = has_args(&data);
 
-    let parsers = data
-        .fields
-        .iter()
-        .map(|f| {
-            f.attrs
+    let parsers = arguments(&data).map(|field| {
+        syn::parse2::<Expr>(
+            field
+                .attrs
                 .iter()
                 .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
-                .unwrap()
-        })
-        .map(|attr| syn::parse2::<Expr>(attr.tts.clone()).unwrap());
+                .unwrap() // arguments are guaranteed to have a parse field by definition.
+                .tts
+                .clone(),
+        )
+        .unwrap()
+    });
+    let present_cbs = flags(&data).map(|field| {
+        syn::parse2::<Expr>(
+            field
+                .attrs
+                .iter()
+                .find(|attr| attr.path.is_ident(Ident::new("present", Span::call_site())))
+                .unwrap() // arguments are guaranteed to have a present field by definition.
+                .tts
+                .clone(),
+        )
+        .unwrap()
+    });
 
     let is_required = data.fields.iter().map(|f| {
         if f.attrs.iter().any(|a| {
@@ -85,7 +145,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #struct_name {
         #(
-            fn #accessor_names(&self) -> u32 {self.#member_idents2}
+            fn #accessor_names(&self) -> u32 {self.#member_idents}
          )*
 
                 pub fn from_args<T>(args: T) -> std::result::Result<#struct_name, ()>
@@ -105,14 +165,21 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
 
                     // Set each option if it is specified.
                     #(
-                        let opt_name = #long_options;
+                        let opt_name = #arg_long_options;
                         if matches.opt_present(opt_name) {
                             let values = matches.opt_strs(opt_name);
-                            cfg.#member_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
+                            cfg.#argument_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
                         }
                     )*
 
-                    // TODO And flags
+                    // And flags
+                    #(
+                        let opt_name = #flag_long_options;
+                        if matches.opt_present(opt_name) {
+                            let values = matches.opt_strs(opt_name);
+                            cfg.#flag_idents = #present_cbs();
+                        }
+                    )*
 
                     Ok(cfg)
                 }
@@ -125,7 +192,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 #(
                     options_parser.opt(
                         "",// short_names
-                        #long_options2, // long argument
+                        #long_options, // long argument
                         "", //option.help,
                         "", //option.hint,
                         #has_args, //option.has_arg,
