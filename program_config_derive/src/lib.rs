@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
@@ -138,7 +140,8 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     let expanded = quote! {
 
     enum ConfigError {
-        ParsingArgs,
+        ParsingArg(Box<std::error::Error>),
+        ParsingArgs(getopts::Fail),
     }
 
     impl #struct_name {
@@ -154,7 +157,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 let mut cfg = Self::default();
 
                 let opt_parser = build_options_parser();
-                let matches = opt_parser.parse(args).map_err(|_| ConfigError::ParsingArgs)?;
+                let matches = opt_parser.parse(args).map_err(ConfigError::ParsingArgs)?;
                 if matches.opt_present("h") {
                     let brief = format!("Usage: TODO [options]");
                     print!("{}", opt_parser.usage(&brief));
@@ -166,7 +169,8 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                     let opt_name = #arg_long_options;
                     if matches.opt_present(opt_name) {
                         let values = matches.opt_strs(opt_name);
-                        cfg.#argument_idents = #parsers(&values[0]).unwrap(); // TODO handle parse int
+                        cfg.#argument_idents =
+                            #parsers(&values[0]).map_err(|e| ConfigError::ParsingArg(Box::new(e)))?;
                     }
                 )*
 
