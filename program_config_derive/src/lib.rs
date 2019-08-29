@@ -122,8 +122,6 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 let mut options_parser = getopts::Options::new();
                 options_parser.optflag("h", "help", "Print this help menu");
 
-                // TODO allow required args vs optional args.
-                // need to allow options in the Config class.
                 #(
                     options_parser.opt(
                         "",// short_names
