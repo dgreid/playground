@@ -66,17 +66,6 @@ fn has_args(data: &DataStruct) -> impl Iterator<Item = proc_macro2::TokenStream>
     })
 }
 
-fn help_strings(data: &DataStruct) -> impl Iterator<Item = syn::parse2::Expr> + '_ {
-    data.fields.iter().map(|field| {
-        field
-            .attrs
-            .iter()
-            .find(|attr| attr.path.is_ident(Ident::new("help", Span::call_site())))
-            .expect("Missing help string")
-            .tts
-            .clone()
-    })
-
 #[proc_macro_derive(ConfigStruct, attributes(flag, help, parse, required))]
 pub fn config_struct(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -98,7 +87,25 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     let long_options = get_long_options(&data);
     let arg_long_options = argument_long_options(&data);
     let flag_long_options = flag_long_options(&data);
-    let help_strings = help_strings(&data);
+    let help_strings = data.fields.iter().map(|field| {
+        match field
+            .attrs
+            .iter()
+            .find(|attr| attr.path.is_ident(Ident::new("help", Span::call_site())))
+            .expect("Missing help string when building configuration struct.")
+            .parse_meta()
+            .expect("Failed parsing help attribute.")
+        {
+            Meta::NameValue(name_value) => {
+                if let Lit::Str(lit_str) = name_value.lit {
+                    lit_str.value()
+                } else {
+                    panic!("Failed parsing help attribute.");
+                }
+            }
+            _ => panic!("Failed parsing help attribute."),
+        }
+    });
 
     let accessor_names = data
         .fields
@@ -157,12 +164,24 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
         ParsingArgs(getopts::Fail),
     }
 
+    impl std::fmt::Display for ConfigError {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+           use ConfigError::*;
+
+           match self {
+               EmptyArguments => write!(f, "No arguments"),
+               ParsingArg(e) => write!(f, "Parsing arg: {}", e),
+               ParsingArgs(e) => write!(f, "Parsing args: {}", e),
+           }
+        }
+    }
+
     impl #struct_name {
         #(
             fn #accessor_names(&self) -> #member_types {self.#member_idents}
          )*
 
-        pub fn from_args<T>(mut args: T) -> std::result::Result<#struct_name, ConfigError>
+        pub fn from_args<T>(mut args: T) -> std::result::Result<Option<#struct_name>, ConfigError>
             where
                 T: Iterator,
                 T::Item: AsRef<std::ffi::OsStr>,
@@ -175,11 +194,18 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 let mut cfg = Self::default();
 
                 let opt_parser = build_options_parser();
-                let matches = opt_parser.parse(args).map_err(ConfigError::ParsingArgs)?;
-                if matches.opt_present("h") {
+                let matches = match opt_parser.parse(args) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        let brief = format!("Usage: {} [options]", program_name);
+                        print!("{}", opt_parser.usage(&brief));
+                        return Err(ConfigError::ParsingArgs(e));
+                    }
+                };
+                if matches.opt_present("help") {
                     let brief = format!("Usage: {} [options]", program_name);
                     print!("{}", opt_parser.usage(&brief));
-                    std::process::exit(0);
+                    return Ok(None);
                 }
 
                 // Set each option if it is specified.
@@ -201,7 +227,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                     }
                 )*
 
-                Ok(cfg)
+                Ok(Some(cfg))
             }
         }
 
