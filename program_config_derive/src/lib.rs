@@ -66,7 +66,18 @@ fn has_args(data: &DataStruct) -> impl Iterator<Item = proc_macro2::TokenStream>
     })
 }
 
-#[proc_macro_derive(ConfigStruct, attributes(flag, parse, required))]
+fn help_strings(data: &DataStruct) -> impl Iterator<Item = syn::parse2::Expr> + '_ {
+    data.fields.iter().map(|field| {
+        field
+            .attrs
+            .iter()
+            .find(|attr| attr.path.is_ident(Ident::new("help", Span::call_site())))
+            .expect("Missing help string")
+            .tts
+            .clone()
+    })
+
+#[proc_macro_derive(ConfigStruct, attributes(flag, help, parse, required))]
 pub fn config_struct(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
@@ -87,6 +98,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
     let long_options = get_long_options(&data);
     let arg_long_options = argument_long_options(&data);
     let flag_long_options = flag_long_options(&data);
+    let help_strings = help_strings(&data);
 
     let accessor_names = data
         .fields
@@ -104,7 +116,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 .attrs
                 .iter()
                 .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
-                .unwrap() // arguments are guaranteed to have a parse field by definition.
+                .unwrap() // arguments are guaranteed to have a parse attribute by definition.
                 .tts
                 .clone(),
         )
@@ -201,7 +213,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 options_parser.opt(
                     "",// short_names
                     #long_options, // long argument
-                    "", //option.help,
+                    #help_strings, //option.help,
                     "", //option.hint,
                     #has_args, //option.has_arg,
                     #is_required, //option.occur,
