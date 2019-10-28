@@ -1,4 +1,6 @@
 #![feature(async_closure)]
+// TODO - remove nightly drain_filter code
+#![feature(drain_filter)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -139,10 +141,9 @@ fn main() {
 
     // Executer.
     loop {
-        for (fut, ready) in futures
-            .iter_mut()
-            .filter(|(_fut, ready)| ready.load(Ordering::Relaxed))
-        {
+        futures.drain_filter(|(fut, ready)| {
+            if !ready.load(Ordering::Relaxed) { return false; }
+
             ready.store(false, Ordering::Relaxed);
             let raw_waker = unsafe { create_waker(ready as *mut _ as *const _) };
 
@@ -150,10 +151,12 @@ fn main() {
             let mut ctx = Context::from_waker(&waker);
             let f = fut.as_mut();
             match f.poll(&mut ctx) {
-                Poll::Pending => (),
-                Poll::Ready(_) => return,
+                Poll::Pending => false,
+                Poll::Ready(_) => true,
             }
-        }
+        });
+
+        if futures.is_empty() {return;}
 
         let mut wakers = wakers_arc.borrow_mut();
         wakers.wait_wake_readable();
