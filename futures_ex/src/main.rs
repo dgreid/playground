@@ -1,12 +1,13 @@
 #![feature(async_closure)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{stdin, Read, StdinLock};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::task::{Context, Poll};
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
@@ -15,12 +16,12 @@ use mio::Poll as MioPoll;
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
-    wakers: Arc<Mutex<WakerContexts>>,
+    wakers: Arc<RefCell<WakerContexts>>,
     started: bool, // hack because first poll can't check stdin for readable.
 }
 
 impl<'a> ExampleStream<'a> {
-    pub fn new(stdin_lock: StdinLock<'a>, wakers: Arc<Mutex<WakerContexts>>) -> Self {
+    pub fn new(stdin_lock: StdinLock<'a>, wakers: Arc<RefCell<WakerContexts>>) -> Self {
         ExampleStream {
             stdin_lock,
             wakers,
@@ -42,7 +43,7 @@ impl<'a> Future for ExampleStream<'a> {
             }
         }
         self.started = true;
-        self.wakers.lock().unwrap().add_waker(
+        self.wakers.borrow_mut().add_waker(
             &self.stdin_lock,
             PollToken::StdIn,
             cx.waker().clone(),
@@ -59,7 +60,6 @@ unsafe fn waker_wake_by_ref(data_ptr: *const ()) {
     let bool_atomic_ref = bool_atomic_ptr.as_ref().unwrap();
     bool_atomic_ref.store(true, Ordering::Relaxed);
 }
-
 unsafe fn waker_clone(data_ptr: *const ()) -> RawWaker {
     create_waker(data_ptr)
 }
@@ -126,7 +126,7 @@ fn main() {
     let stdin = stdin();
     let stdin_lock = stdin.lock();
 
-    let wakers_arc = Arc::new(Mutex::new(WakerContexts {
+    let wakers_arc = Arc::new(RefCell::new(WakerContexts {
         mio_poll: MioPoll::new().unwrap(),
         token_map: HashMap::new(),
     }));
@@ -166,7 +166,7 @@ fn main() {
             }
         }
 
-        let mut wakers = wakers_arc.lock().unwrap();
+        let mut wakers = wakers_arc.borrow_mut();
         wakers.wait_wake_readable();
     }
 }
