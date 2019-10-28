@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use sys_util::{PollContext, PollToken};
+use sys_util::PollContext;
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
@@ -46,7 +46,7 @@ impl<'a> Future for ExampleStream<'a> {
         self.started = true;
         self.wakers
             .borrow_mut()
-            .add_waker(&self.stdin_lock, ReadToken::StdIn, cx.waker().clone());
+            .add_waker(&self.stdin_lock, cx.waker().clone());
         Poll::Pending
     }
 }
@@ -70,11 +70,7 @@ unsafe fn create_waker(data_ptr: *const ()) -> RawWaker {
     RawWaker::new(data_ptr, &WAKER_VTABLE)
 }
 
-#[derive(PollToken, Hash, Clone, Copy, PartialEq, Eq)]
-enum ReadToken {
-    StdIn,
-}
-
+// Saved FD exists becaus RawFd doesn't impl AsRawFd.
 struct SavedFd(RawFd);
 
 impl AsRawFd for SavedFd {
@@ -84,15 +80,19 @@ impl AsRawFd for SavedFd {
 }
 
 struct WakerContexts {
-    poll_ctx: PollContext<ReadToken>,
-    token_map: HashMap<ReadToken, (SavedFd, Waker)>,
+    poll_ctx: PollContext<u64>,
+    token_map: HashMap<u64, (SavedFd, Waker)>,
+    next_token: u64,
 }
 
 impl WakerContexts {
-    pub fn add_waker(&mut self, fd: &dyn AsRawFd, token: ReadToken, waker: Waker) {
-        self.poll_ctx.add(fd, token).unwrap();
+    pub fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker) {
+        while self.token_map.contains_key(&self.next_token) {
+            self.next_token += 1;
+        }
+        self.poll_ctx.add(fd, self.next_token).unwrap();
         self.token_map
-            .insert(token, (SavedFd(fd.as_raw_fd()), waker));
+            .insert(self.next_token, (SavedFd(fd.as_raw_fd()), waker));
     }
 
     pub fn wait_wake_readable(&mut self) {
@@ -113,6 +113,7 @@ fn main() {
     let wakers_arc = Arc::new(RefCell::new(WakerContexts {
         poll_ctx: PollContext::new().unwrap(),
         token_map: HashMap::new(),
+        next_token: 0,
     }));
 
     let ex = ExampleStream::new(stdin_lock, wakers_arc.clone());
