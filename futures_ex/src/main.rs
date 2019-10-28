@@ -1,4 +1,3 @@
-#![feature(async_await)]
 #![feature(async_closure)]
 
 use std::collections::HashMap;
