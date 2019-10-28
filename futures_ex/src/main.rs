@@ -136,7 +136,6 @@ fn main() {
     let fut = Box::pin(future);
     let mut futures = Vec::new();
 
-    //TODO - use atomic instead of refcell
     futures.push((fut, AtomicBool::new(true)));
 
     // Executer.
