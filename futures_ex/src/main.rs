@@ -9,11 +9,11 @@ use std::io::{stdin, Read, StdinLock};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use sys_util::{PollContext,PollToken};
+use sys_util::{PollContext, PollToken};
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
@@ -44,11 +44,9 @@ impl<'a> Future for ExampleStream<'a> {
             }
         }
         self.started = true;
-        self.wakers.borrow_mut().add_waker(
-            &self.stdin_lock,
-            ReadToken::StdIn,
-            cx.waker().clone(),
-        );
+        self.wakers
+            .borrow_mut()
+            .add_waker(&self.stdin_lock, ReadToken::StdIn, cx.waker().clone());
         Poll::Pending
     }
 }
@@ -92,12 +90,7 @@ struct WakerContexts {
 
 impl WakerContexts {
     pub fn add_waker(&mut self, fd: &dyn AsRawFd, token: ReadToken, waker: Waker) {
-        self.poll_ctx
-            .add(
-                fd,
-                token,
-            )
-            .unwrap();
+        self.poll_ctx.add(fd, token).unwrap();
         self.token_map
             .insert(token, (SavedFd(fd.as_raw_fd()), waker));
     }
@@ -141,7 +134,9 @@ fn main() {
     // Executer.
     loop {
         futures.drain_filter(|(fut, ready)| {
-            if !ready.load(Ordering::Relaxed) { return false; }
+            if !ready.load(Ordering::Relaxed) {
+                return false;
+            }
 
             ready.store(false, Ordering::Relaxed);
             let raw_waker = unsafe { create_waker(ready as *mut _ as *const _) };
@@ -155,7 +150,9 @@ fn main() {
             }
         });
 
-        if futures.is_empty() {return;}
+        if futures.is_empty() {
+            return;
+        }
 
         let mut wakers = wakers_arc.borrow_mut();
         wakers.wait_wake_readable();
