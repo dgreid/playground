@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 libc = "*"
-mio = "*"
+sys_util = { path = "../../chromiumos/src/platform/crosvm/sys_util" }

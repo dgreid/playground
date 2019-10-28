@@ -11,8 +11,7 @@ use std::sync::{Arc};
 use std::task::{Context, Poll};
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use mio::unix::EventedFd;
-use mio::Poll as MioPoll;
+use sys_util::{PollContext,PollToken};
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
@@ -45,7 +44,7 @@ impl<'a> Future for ExampleStream<'a> {
         self.started = true;
         self.wakers.borrow_mut().add_waker(
             &self.stdin_lock,
-            PollToken::StdIn,
+            ReadToken::StdIn,
             cx.waker().clone(),
         );
         Poll::Pending
@@ -71,8 +70,8 @@ unsafe fn create_waker(data_ptr: *const ()) -> RawWaker {
     RawWaker::new(data_ptr, &WAKER_VTABLE)
 }
 
-#[derive(Hash, Clone, Copy, PartialEq, Eq)]
-enum PollToken {
+#[derive(PollToken, Hash, Clone, Copy, PartialEq, Eq)]
+enum ReadToken {
     StdIn,
 }
 
@@ -85,18 +84,16 @@ impl AsRawFd for SavedFd {
 }
 
 struct WakerContexts {
-    mio_poll: MioPoll,
-    token_map: HashMap<PollToken, (SavedFd, Waker)>,
+    poll_ctx: PollContext<ReadToken>,
+    token_map: HashMap<ReadToken, (SavedFd, Waker)>,
 }
 
 impl WakerContexts {
-    pub fn add_waker(&mut self, fd: &dyn AsRawFd, token: PollToken, waker: Waker) {
-        self.mio_poll
-            .register(
-                &EventedFd(&fd.as_raw_fd()),
-                mio::Token(token as usize),
-                mio::Ready::readable(),
-                mio::PollOpt::edge(),
+    pub fn add_waker(&mut self, fd: &dyn AsRawFd, token: ReadToken, waker: Waker) {
+        self.poll_ctx
+            .add(
+                fd,
+                token,
             )
             .unwrap();
         self.token_map
@@ -104,18 +101,10 @@ impl WakerContexts {
     }
 
     pub fn wait_wake_readable(&mut self) {
-        let mut events = mio::Events::with_capacity(10);
-        self.mio_poll.poll(&mut events, None).unwrap();
-        for e in &events {
-            if !e.readiness().is_readable() {
-                continue;
-            }
-            let token = match e.token().0 {
-                0 => PollToken::StdIn,
-                _ => panic!("invalid token"),
-            };
-            if let Some((fd, waker)) = self.token_map.remove(&token) {
-                self.mio_poll.deregister(&EventedFd(&fd.0)).unwrap();
+        let events = self.poll_ctx.wait().unwrap();
+        for e in events.iter_readable() {
+            if let Some((fd, waker)) = self.token_map.remove(&e.token()) {
+                self.poll_ctx.delete(&fd).unwrap();
                 waker.wake_by_ref();
             }
         }
@@ -127,7 +116,7 @@ fn main() {
     let stdin_lock = stdin.lock();
 
     let wakers_arc = Arc::new(RefCell::new(WakerContexts {
-        mio_poll: MioPoll::new().unwrap(),
+        poll_ctx: PollContext::new().unwrap(),
         token_map: HashMap::new(),
     }));
 
