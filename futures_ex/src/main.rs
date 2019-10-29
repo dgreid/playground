@@ -17,12 +17,12 @@ use sys_util::PollContext;
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
-    wakers: Arc<RefCell<WakerContexts>>,
+    wakers: Arc<RefCell<dyn FdWaker>>,
     started: bool, // hack because first poll can't check stdin for readable.
 }
 
 impl<'a> ExampleStream<'a> {
-    pub fn new(stdin_lock: StdinLock<'a>, wakers: Arc<RefCell<WakerContexts>>) -> Self {
+    pub fn new(stdin_lock: StdinLock<'a>, wakers: Arc<RefCell<dyn FdWaker>>) -> Self {
         ExampleStream {
             stdin_lock,
             wakers,
@@ -79,14 +79,21 @@ impl AsRawFd for SavedFd {
     }
 }
 
+/// Trait for system wakers that allow waking on an FD.
+/// Used by futures who want to block until an FD becomes readable.
+trait FdWaker {
+    /// Tells the waking system to wake `waker` when `fd` becomes readable.
+    fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker);
+}
+
 struct WakerContexts {
     poll_ctx: PollContext<u64>,
     token_map: HashMap<u64, (SavedFd, Waker)>,
     next_token: u64,
 }
 
-impl WakerContexts {
-    pub fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker) {
+impl FdWaker for WakerContexts {
+    fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker) {
         while self.token_map.contains_key(&self.next_token) {
             self.next_token += 1;
         }
@@ -94,7 +101,9 @@ impl WakerContexts {
         self.token_map
             .insert(self.next_token, (SavedFd(fd.as_raw_fd()), waker));
     }
+}
 
+impl WakerContexts {
     pub fn wait_wake_readable(&mut self) {
         let events = self.poll_ctx.wait().unwrap();
         for e in events.iter_readable() {
