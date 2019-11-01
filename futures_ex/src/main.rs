@@ -17,15 +17,15 @@ use sys_util::PollContext;
 
 struct ExampleStream<'a> {
     stdin_lock: StdinLock<'a>,
-    wakers: Arc<RefCell<dyn FdWaker>>,
+    executor: Arc<RefCell<dyn FdExecutor>>,
     started: bool, // hack because first poll can't check stdin for readable.
 }
 
 impl<'a> ExampleStream<'a> {
-    pub fn new(stdin_lock: StdinLock<'a>, wakers: Arc<RefCell<dyn FdWaker>>) -> Self {
+    pub fn new(stdin_lock: StdinLock<'a>, executor: Arc<RefCell<dyn FdExecutor>>) -> Self {
         ExampleStream {
             stdin_lock,
-            wakers,
+            executor,
             started: false,
         }
     }
@@ -44,7 +44,7 @@ impl<'a> Future for ExampleStream<'a> {
             }
         }
         self.started = true;
-        self.wakers
+        self.executor
             .borrow_mut()
             .add_waker(&self.stdin_lock, cx.waker().clone());
         Poll::Pending
@@ -79,20 +79,14 @@ impl AsRawFd for SavedFd {
     }
 }
 
-/// Trait for system wakers that allow waking on an FD.
+/// Trait for system executors that allow waking on an FD.
 /// Used by futures who want to block until an FD becomes readable.
-trait FdWaker {
+trait FdExecutor {
     /// Tells the waking system to wake `waker` when `fd` becomes readable.
     fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker);
 }
 
-struct WakerContexts {
-    poll_ctx: PollContext<u64>,
-    token_map: HashMap<u64, (SavedFd, Waker)>,
-    next_token: u64,
-}
-
-impl FdWaker for WakerContexts {
+impl FdExecutor for FdFutureExecutor {
     fn add_waker(&mut self, fd: &dyn AsRawFd, waker: Waker) {
         while self.token_map.contains_key(&self.next_token) {
             self.next_token += 1;
@@ -103,7 +97,29 @@ impl FdWaker for WakerContexts {
     }
 }
 
-impl WakerContexts {
+struct FdFutureExecutor {
+    futures: Vec<Pin<Box<dyn Future<Output = ()>>>>,
+    poll_ctx: PollContext<u64>,
+    token_map: HashMap<u64, (SavedFd, Waker)>,
+    next_token: u64,
+}
+
+impl FdFutureExecutor {
+    /// Creates an empty executor.
+    pub fn new() -> FdFutureExecutor {
+        FdFutureExecutor {
+            futures: Vec::new(),
+            poll_ctx: PollContext::new().unwrap(),
+            token_map: HashMap::new(),
+            next_token: 0,
+        }
+    }
+
+    /// Tells the Executor to start polling the given future when `fd` becomes readable.
+    pub fn add_future(&mut self, future: Pin<Box<dyn Future<Output = ()>>>) {
+        self.futures.push(future);
+    }
+
     pub fn wait_wake_readable(&mut self) {
         let events = self.poll_ctx.wait().unwrap();
         for e in events.iter_readable() {
@@ -119,13 +135,9 @@ fn main() {
     let stdin = stdin();
     let stdin_lock = stdin.lock();
 
-    let wakers_arc = Arc::new(RefCell::new(WakerContexts {
-        poll_ctx: PollContext::new().unwrap(),
-        token_map: HashMap::new(),
-        next_token: 0,
-    }));
+    let executor_arc = Arc::new(RefCell::new(FdFutureExecutor::new()));
 
-    let ex = ExampleStream::new(stdin_lock, wakers_arc.clone());
+    let ex = ExampleStream::new(stdin_lock, executor_arc.clone());
     let closure = async || {
         println!("Hello from async closure.");
         let buf = ex.await;
@@ -164,7 +176,7 @@ fn main() {
             return;
         }
 
-        let mut wakers = wakers_arc.borrow_mut();
+        let mut wakers = executor_arc.borrow_mut();
         wakers.wait_wake_readable();
     }
 }
