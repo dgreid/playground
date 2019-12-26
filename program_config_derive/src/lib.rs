@@ -20,7 +20,7 @@ fn arguments(data: &DataStruct) -> impl Iterator<Item = &Field> + '_ {
         field
             .attrs
             .iter()
-            .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
+            .find(|attr| attr.path.is_ident(&Ident::new("parse", Span::call_site())))
             .is_some()
     })
 }
@@ -36,7 +36,7 @@ fn flags(data: &DataStruct) -> impl Iterator<Item = &Field> + '_ {
         field
             .attrs
             .iter()
-            .find(|attr| attr.path.is_ident(Ident::new("flag", Span::call_site())))
+            .find(|attr| attr.path.is_ident(&Ident::new("flag", Span::call_site())))
             .is_some()
     })
 }
@@ -56,7 +56,7 @@ fn has_args(data: &DataStruct) -> impl Iterator<Item = proc_macro2::TokenStream>
         if field
             .attrs
             .iter()
-            .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
+            .find(|attr| attr.path.is_ident(&Ident::new("parse", Span::call_site())))
             .is_some()
         {
             quote!(getopts::HasArg::Yes)
@@ -91,7 +91,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
         match field
             .attrs
             .iter()
-            .find(|attr| attr.path.is_ident(Ident::new("help", Span::call_site())))
+            .find(|attr| attr.path.is_ident(&Ident::new("help", Span::call_site())))
             .expect("Missing help string when building configuration struct.")
             .parse_meta()
             .expect("Failed parsing help attribute.")
@@ -122,9 +122,9 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
             field
                 .attrs
                 .iter()
-                .find(|attr| attr.path.is_ident(Ident::new("parse", Span::call_site())))
+                .find(|attr| attr.path.is_ident(&Ident::new("parse", Span::call_site())))
                 .unwrap() // arguments are guaranteed to have a parse attribute by definition.
-                .tts
+                .tokens
                 .clone(),
         )
         .unwrap()
@@ -136,7 +136,7 @@ pub fn config_struct(input: TokenStream) -> TokenStream {
                 .map(|m| {
                     match m {
                         Meta::NameValue(name_value) => {
-                            if name_value.ident.to_string() == "required" {
+                            if name_value.path.is_ident("required") {
                                 if let Lit::Str(lit_str) = name_value.lit {
                                     if lit_str.value() == "true" {
                                         return true;
